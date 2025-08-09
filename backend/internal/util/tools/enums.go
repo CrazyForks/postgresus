@@ -5,6 +5,13 @@ import (
 	"strconv"
 )
 
+type PostgresqlExtension string
+
+const (
+	// needed for system monitoring (CPU, RAM)
+	PostgresqlExtensionPgProctab PostgresqlExtension = "pg_proctab"
+)
+
 type PostgresqlVersion string
 
 const (

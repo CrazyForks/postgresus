@@ -1,0 +1,3 @@
+package postgres_monitoring_collectors
+
+type SystemMonitoringBackgroundService struct {}

@@ -163,7 +163,7 @@ func (uc *RestorePostgresqlBackupUsecase) restoreFromStorage(
 	// Add the temporary backup file as the last argument to pg_restore
 	args = append(args, tempBackupFile)
 
-	return uc.executePgRestore(ctx, pgBin, args, pgpassFile, pgConfig)
+	return uc.executePgRestore(ctx, pgBin, args, pgpassFile, pgConfig, backup)
 }
 
 // downloadBackupToTempFile downloads backup data from storage to a temporary file
@@ -236,6 +236,7 @@ func (uc *RestorePostgresqlBackupUsecase) executePgRestore(
 	args []string,
 	pgpassFile string,
 	pgConfig *pgtypes.PostgresqlDatabase,
+	backup *backups.Backup,
 ) error {
 	cmd := exec.CommandContext(ctx, pgBin, args...)
 	uc.logger.Info("Executing PostgreSQL restore command", "command", cmd.String())
@@ -284,7 +285,7 @@ func (uc *RestorePostgresqlBackupUsecase) executePgRestore(
 			return fmt.Errorf("restore cancelled due to shutdown")
 		}
 
-		return uc.handlePgRestoreError(waitErr, stderrOutput, pgBin, args)
+		return uc.handlePgRestoreError(waitErr, stderrOutput, pgBin, args, backup, pgConfig)
 	}
 
 	return nil
@@ -336,6 +337,8 @@ func (uc *RestorePostgresqlBackupUsecase) handlePgRestoreError(
 	stderrOutput []byte,
 	pgBin string,
 	args []string,
+	backup *backups.Backup,
+	pgConfig *pgtypes.PostgresqlDatabase,
 ) error {
 	// Enhanced error handling for PostgreSQL connection and restore issues
 	stderrStr := string(stderrOutput)
@@ -404,8 +407,20 @@ func (uc *RestorePostgresqlBackupUsecase) handlePgRestoreError(
 					stderrStr,
 				)
 			} else if containsIgnoreCase(stderrStr, "database") && containsIgnoreCase(stderrStr, "does not exist") {
+				backupDbName := "unknown"
+				if backup.Database != nil && backup.Database.Postgresql != nil && backup.Database.Postgresql.Database != nil {
+					backupDbName = *backup.Database.Postgresql.Database
+				}
+
+				targetDbName := "unknown"
+				if pgConfig.Database != nil {
+					targetDbName = *pgConfig.Database
+				}
+
 				errorMsg = fmt.Sprintf(
-					"Target database does not exist. Create the database before restoring. stderr: %s",
+					"Target database does not exist (backup db %s, not found %s). Create the database before restoring. stderr: %s",
+					backupDbName,
+					targetDbName,
 					stderrStr,
 				)
 			}

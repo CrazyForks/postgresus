@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"postgresus-backend/internal/util/tools"
 	"regexp"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -174,4 +175,95 @@ func buildConnectionStringForDB(p *PostgresqlDatabase, dbName string) string {
 		dbName,
 		sslMode,
 	)
+}
+
+func (p *PostgresqlDatabase) InstallExtensions(extensions []tools.PostgresqlExtension) error {
+	if len(extensions) == 0 {
+		return nil
+	}
+
+	if p.Database == nil || *p.Database == "" {
+		return errors.New("database name is required for installing extensions")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Build connection string for the specific database
+	connStr := buildConnectionStringForDB(p, *p.Database)
+
+	// Connect to database
+	conn, err := pgx.Connect(ctx, connStr)
+	if err != nil {
+		return fmt.Errorf("failed to connect to database '%s': %w", *p.Database, err)
+	}
+	defer func() {
+		if closeErr := conn.Close(ctx); closeErr != nil {
+			// Log error but don't return it to avoid masking the main error
+		}
+	}()
+
+	// Check which extensions are already installed
+	installedExtensions, err := p.getInstalledExtensions(ctx, conn)
+	if err != nil {
+		return fmt.Errorf("failed to check installed extensions: %w", err)
+	}
+
+	// Install missing extensions
+	for _, extension := range extensions {
+		if contains(installedExtensions, string(extension)) {
+			continue // Extension already installed
+		}
+
+		if err := p.installExtension(ctx, conn, string(extension)); err != nil {
+			return fmt.Errorf("failed to install extension '%s': %w", extension, err)
+		}
+	}
+
+	return nil
+}
+
+// getInstalledExtensions queries the database for currently installed extensions
+func (p *PostgresqlDatabase) getInstalledExtensions(ctx context.Context, conn *pgx.Conn) ([]string, error) {
+	query := "SELECT extname FROM pg_extension"
+
+	rows, err := conn.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query installed extensions: %w", err)
+	}
+	defer rows.Close()
+
+	var extensions []string
+	for rows.Next() {
+		var extname string
+
+		if err := rows.Scan(&extname); err != nil {
+			return nil, fmt.Errorf("failed to scan extension name: %w", err)
+		}
+
+		extensions = append(extensions, extname)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating over extension rows: %w", err)
+	}
+
+	return extensions, nil
+}
+
+// installExtension installs a single PostgreSQL extension
+func (p *PostgresqlDatabase) installExtension(ctx context.Context, conn *pgx.Conn, extensionName string) error {
+	query := fmt.Sprintf("CREATE EXTENSION IF NOT EXISTS %s", extensionName)
+
+	_, err := conn.Exec(ctx, query)
+	if err != nil {
+		return fmt.Errorf("failed to execute CREATE EXTENSION: %w", err)
+	}
+
+	return nil
+}
+
+// contains checks if a string slice contains a specific string
+func contains(slice []string, item string) bool {
+	return slices.Contains(slice, item)
 }
