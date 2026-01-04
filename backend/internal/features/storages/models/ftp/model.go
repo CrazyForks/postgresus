@@ -18,6 +18,7 @@ import (
 const (
 	ftpConnectTimeout     = 30 * time.Second
 	ftpTestConnectTimeout = 10 * time.Second
+	ftpDeleteTimeout      = 30 * time.Second
 	ftpChunkSize          = 16 * 1024 * 1024
 )
 
@@ -134,7 +135,10 @@ func (f *FTPStorage) GetFile(
 }
 
 func (f *FTPStorage) DeleteFile(encryptor encryption.FieldEncryptor, fileID uuid.UUID) error {
-	conn, err := f.connect(encryptor, ftpConnectTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), ftpDeleteTimeout)
+	defer cancel()
+
+	conn, err := f.connectWithContext(ctx, encryptor, ftpDeleteTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to connect to FTP: %w", err)
 	}

@@ -27,6 +27,7 @@ const (
 	gdResponseTimeout     = 30 * time.Second
 	gdIdleConnTimeout     = 90 * time.Second
 	gdTLSHandshakeTimeout = 30 * time.Second
+	gdDeleteTimeout       = 30 * time.Second
 
 	// Chunk size for Google Drive resumable uploads - 16MB provides good balance
 	// between memory usage and upload efficiency. Google Drive requires chunks
@@ -185,7 +186,9 @@ func (s *GoogleDriveStorage) DeleteFile(
 	encryptor encryption.FieldEncryptor,
 	fileID uuid.UUID,
 ) error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), gdDeleteTimeout)
+	defer cancel()
+
 	return s.withRetryOnAuth(ctx, encryptor, func(driveService *drive.Service) error {
 		folderID, err := s.findBackupsFolder(driveService)
 		if err != nil {

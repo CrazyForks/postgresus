@@ -22,6 +22,7 @@ import (
 
 const (
 	rcloneOperationTimeout = 30 * time.Second
+	rcloneDeleteTimeout    = 30 * time.Second
 )
 
 var rcloneConfigMu sync.Mutex
@@ -115,7 +116,8 @@ func (r *RcloneStorage) GetFile(
 }
 
 func (r *RcloneStorage) DeleteFile(encryptor encryption.FieldEncryptor, fileID uuid.UUID) error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), rcloneDeleteTimeout)
+	defer cancel()
 
 	remoteFs, err := r.getFs(ctx, encryptor)
 	if err != nil {

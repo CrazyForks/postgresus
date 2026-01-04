@@ -18,6 +18,8 @@ import (
 )
 
 const (
+	nasDeleteTimeout = 30 * time.Second
+
 	// Chunk size for NAS uploads - 16MB provides good balance between
 	// memory usage and upload efficiency. This creates backpressure to pg_dump
 	// by only reading one chunk at a time and waiting for NAS to confirm receipt.
@@ -193,7 +195,10 @@ func (n *NASStorage) GetFile(
 }
 
 func (n *NASStorage) DeleteFile(encryptor encryption.FieldEncryptor, fileID uuid.UUID) error {
-	session, err := n.createSession(encryptor)
+	ctx, cancel := context.WithTimeout(context.Background(), nasDeleteTimeout)
+	defer cancel()
+
+	session, err := n.createSessionWithContext(ctx, encryptor)
 	if err != nil {
 		return fmt.Errorf("failed to create NAS session: %w", err)
 	}
@@ -211,10 +216,8 @@ func (n *NASStorage) DeleteFile(encryptor encryption.FieldEncryptor, fileID uuid
 
 	filePath := n.getFilePath(fileID.String())
 
-	// Check if file exists before trying to delete
 	_, err = fs.Stat(filePath)
 	if err != nil {
-		// File doesn't exist, consider it already deleted
 		return nil
 	}
 
