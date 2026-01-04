@@ -121,6 +121,7 @@ export const DatabaseConfigComponent = ({
   const remove = () => {
     if (!database) return;
 
+    setIsShowRemoveConfirm(false);
     setIsRemoving(true);
     databaseApi
       .deleteDatabase(database.id)
@@ -165,7 +166,18 @@ export const DatabaseConfigComponent = ({
   };
 
   return (
-    <div className="w-full rounded-tr-md rounded-br-md rounded-bl-md bg-white p-3 shadow sm:p-5 dark:bg-gray-800">
+    <div className="relative w-full rounded-tr-md rounded-br-md rounded-bl-md bg-white p-3 shadow sm:p-5 dark:bg-gray-800">
+      {isRemoving && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-tr-md rounded-br-md rounded-bl-md bg-white/80 dark:bg-gray-800/80">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500" />
+            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+              Removing database...
+            </span>
+          </div>
+        </div>
+      )}
+
       {!isEditName ? (
         <div className="mb-5 flex items-center text-xl font-bold sm:text-2xl">
           {database.name}

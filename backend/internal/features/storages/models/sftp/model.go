@@ -19,6 +19,7 @@ import (
 const (
 	sftpConnectTimeout     = 30 * time.Second
 	sftpTestConnectTimeout = 10 * time.Second
+	sftpDeleteTimeout      = 30 * time.Second
 )
 
 type SFTPStorage struct {
@@ -154,7 +155,10 @@ func (s *SFTPStorage) GetFile(
 }
 
 func (s *SFTPStorage) DeleteFile(encryptor encryption.FieldEncryptor, fileID uuid.UUID) error {
-	client, sshConn, err := s.connect(encryptor, sftpConnectTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), sftpDeleteTimeout)
+	defer cancel()
+
+	client, sshConn, err := s.connectWithContext(ctx, encryptor, sftpDeleteTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to connect to SFTP: %w", err)
 	}

@@ -26,6 +26,7 @@ const (
 	azureResponseTimeout     = 30 * time.Second
 	azureIdleConnTimeout     = 90 * time.Second
 	azureTLSHandshakeTimeout = 30 * time.Second
+	azureDeleteTimeout       = 30 * time.Second
 
 	// Chunk size for block blob uploads - 16MB provides good balance between
 	// memory usage and upload efficiency. This creates backpressure to pg_dump
@@ -186,8 +187,11 @@ func (s *AzureBlobStorage) DeleteFile(encryptor encryption.FieldEncryptor, fileI
 
 	blobName := s.buildBlobName(fileID.String())
 
+	ctx, cancel := context.WithTimeout(context.Background(), azureDeleteTimeout)
+	defer cancel()
+
 	_, err = client.DeleteBlob(
-		context.TODO(),
+		ctx,
 		s.ContainerName,
 		blobName,
 		nil,

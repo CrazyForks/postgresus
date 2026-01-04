@@ -26,6 +26,7 @@ const (
 	s3ResponseTimeout     = 30 * time.Second
 	s3IdleConnTimeout     = 90 * time.Second
 	s3TLSHandshakeTimeout = 30 * time.Second
+	s3DeleteTimeout       = 30 * time.Second
 
 	// Chunk size for multipart uploads - 16MB provides good balance between
 	// memory usage and upload efficiency. This creates backpressure to pg_dump
@@ -228,9 +229,11 @@ func (s *S3Storage) DeleteFile(encryptor encryption.FieldEncryptor, fileID uuid.
 
 	objectKey := s.buildObjectKey(fileID.String())
 
-	// Delete the object using MinIO client
+	ctx, cancel := context.WithTimeout(context.Background(), s3DeleteTimeout)
+	defer cancel()
+
 	err = client.RemoveObject(
-		context.TODO(),
+		ctx,
 		s.S3Bucket,
 		objectKey,
 		minio.RemoveObjectOptions{},

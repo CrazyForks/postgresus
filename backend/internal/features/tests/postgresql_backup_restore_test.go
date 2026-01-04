@@ -32,21 +32,23 @@ import (
 	test_utils "databasus-backend/internal/util/testing"
 )
 
-const createAndFillTableQuery = `
-DROP TABLE IF EXISTS test_data;
+func createAndFillTableQuery(tableName string) string {
+	return fmt.Sprintf(`
+DROP TABLE IF EXISTS %s;
 
-CREATE TABLE test_data (
+CREATE TABLE %s (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     value INTEGER NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-INSERT INTO test_data (name, value) VALUES
+INSERT INTO %s (name, value) VALUES
     ('test1', 100),
     ('test2', 200),
     ('test3', 300);
-`
+`, tableName, tableName, tableName)
+}
 
 type PostgresContainer struct {
 	Host     string
@@ -378,8 +380,13 @@ func testBackupRestoreForVersion(t *testing.T, pgVersion string, port string, cp
 		}
 	}()
 
-	_, err = container.DB.Exec(createAndFillTableQuery)
+	tableName := fmt.Sprintf("test_data_%s", uuid.New().String()[:8])
+	_, err = container.DB.Exec(createAndFillTableQuery(tableName))
 	assert.NoError(t, err)
+
+	defer func() {
+		_, _ = container.DB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s;", tableName))
+	}()
 
 	router := createTestRouter()
 	user := users_testing.CreateTestUser(users_enums.UserRoleMember)
@@ -436,12 +443,19 @@ func testBackupRestoreForVersion(t *testing.T, pgVersion string, port string, cp
 	var tableExists bool
 	err = newDB.Get(
 		&tableExists,
-		"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'test_data')",
+		fmt.Sprintf(
+			"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '%s')",
+			tableName,
+		),
 	)
 	assert.NoError(t, err)
-	assert.True(t, tableExists, "Table 'test_data' should exist in restored database")
+	assert.True(
+		t,
+		tableExists,
+		fmt.Sprintf("Table '%s' should exist in restored database", tableName),
+	)
 
-	verifyDataIntegrity(t, container.DB, newDB)
+	verifyDataIntegrity(t, container.DB, newDB, tableName)
 
 	err = os.Remove(filepath.Join(config.GetEnv().DataFolder, backup.ID.String()))
 	if err != nil {
@@ -875,8 +889,13 @@ func testBackupRestoreWithReadOnlyUserForVersion(t *testing.T, pgVersion string,
 		}
 	}()
 
-	_, err = container.DB.Exec(createAndFillTableQuery)
+	tableName := fmt.Sprintf("test_data_%s", uuid.New().String()[:8])
+	_, err = container.DB.Exec(createAndFillTableQuery(tableName))
 	assert.NoError(t, err)
+
+	defer func() {
+		_, _ = container.DB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s;", tableName))
+	}()
 
 	router := createTestRouter()
 	user := users_testing.CreateTestUser(users_enums.UserRoleMember)
@@ -941,12 +960,19 @@ func testBackupRestoreWithReadOnlyUserForVersion(t *testing.T, pgVersion string,
 	var tableExists bool
 	err = newDB.Get(
 		&tableExists,
-		"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'test_data')",
+		fmt.Sprintf(
+			"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '%s')",
+			tableName,
+		),
 	)
 	assert.NoError(t, err)
-	assert.True(t, tableExists, "Table 'test_data' should exist in restored database")
+	assert.True(
+		t,
+		tableExists,
+		fmt.Sprintf("Table '%s' should exist in restored database", tableName),
+	)
 
-	verifyDataIntegrity(t, container.DB, newDB)
+	verifyDataIntegrity(t, container.DB, newDB, tableName)
 
 	err = os.Remove(filepath.Join(config.GetEnv().DataFolder, backup.ID.String()))
 	if err != nil {
@@ -1106,8 +1132,13 @@ func testBackupRestoreWithEncryptionForVersion(t *testing.T, pgVersion string, p
 		}
 	}()
 
-	_, err = container.DB.Exec(createAndFillTableQuery)
+	tableName := fmt.Sprintf("test_data_%s", uuid.New().String()[:8])
+	_, err = container.DB.Exec(createAndFillTableQuery(tableName))
 	assert.NoError(t, err)
+
+	defer func() {
+		_, _ = container.DB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s;", tableName))
+	}()
 
 	router := createTestRouter()
 	user := users_testing.CreateTestUser(users_enums.UserRoleMember)
@@ -1163,12 +1194,19 @@ func testBackupRestoreWithEncryptionForVersion(t *testing.T, pgVersion string, p
 	var tableExists bool
 	err = newDB.Get(
 		&tableExists,
-		"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'test_data')",
+		fmt.Sprintf(
+			"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '%s')",
+			tableName,
+		),
 	)
 	assert.NoError(t, err)
-	assert.True(t, tableExists, "Table 'test_data' should exist in restored database")
+	assert.True(
+		t,
+		tableExists,
+		fmt.Sprintf("Table '%s' should exist in restored database", tableName),
+	)
 
-	verifyDataIntegrity(t, container.DB, newDB)
+	verifyDataIntegrity(t, container.DB, newDB, tableName)
 
 	err = os.Remove(filepath.Join(config.GetEnv().DataFolder, backup.ID.String()))
 	if err != nil {
@@ -1630,14 +1668,14 @@ func createSupabaseRestoreViaAPI(
 	)
 }
 
-func verifyDataIntegrity(t *testing.T, originalDB *sqlx.DB, restoredDB *sqlx.DB) {
+func verifyDataIntegrity(t *testing.T, originalDB *sqlx.DB, restoredDB *sqlx.DB, tableName string) {
 	var originalData []TestDataItem
 	var restoredData []TestDataItem
 
-	err := originalDB.Select(&originalData, "SELECT * FROM test_data ORDER BY id")
+	err := originalDB.Select(&originalData, fmt.Sprintf("SELECT * FROM %s ORDER BY id", tableName))
 	assert.NoError(t, err)
 
-	err = restoredDB.Select(&restoredData, "SELECT * FROM test_data ORDER BY id")
+	err = restoredDB.Select(&restoredData, fmt.Sprintf("SELECT * FROM %s ORDER BY id", tableName))
 	assert.NoError(t, err)
 
 	assert.Equal(t, len(originalData), len(restoredData), "Should have same number of rows")
