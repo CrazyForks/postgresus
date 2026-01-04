@@ -1,5 +1,5 @@
-import { CopyOutlined } from '@ant-design/icons';
-import { App, Button, Input, InputNumber, Switch } from 'antd';
+import { CopyOutlined, DownOutlined, InfoCircleOutlined, UpOutlined } from '@ant-design/icons';
+import { App, Button, Checkbox, Input, InputNumber, Switch, Tooltip } from 'antd';
 import { useEffect, useState } from 'react';
 
 import { type Database, databaseApi } from '../../../../entity/databases';
@@ -44,6 +44,9 @@ export const EditMariaDbSpecificDataComponent = ({
   const [isConnectionTested, setIsConnectionTested] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [isConnectionFailed, setIsConnectionFailed] = useState(false);
+
+  const hasAdvancedValues = !!database.mariadb?.isExcludeEvents;
+  const [isShowAdvanced, setShowAdvanced] = useState(hasAdvancedValues);
 
   const parseFromClipboard = async () => {
     try {
@@ -297,7 +300,7 @@ export const EditMariaDbSpecificDataComponent = ({
         </div>
       )}
 
-      <div className="mb-3 flex w-full items-center">
+      <div className="mb-1 flex w-full items-center">
         <div className="min-w-[150px]">Use HTTPS</div>
         <Switch
           checked={editingDatabase.mariadb?.isHttps}
@@ -313,6 +316,52 @@ export const EditMariaDbSpecificDataComponent = ({
           size="small"
         />
       </div>
+
+      <div className="mt-4 mb-1 flex items-center">
+        <div
+          className="flex cursor-pointer items-center text-sm text-blue-600 hover:text-blue-800"
+          onClick={() => setShowAdvanced(!isShowAdvanced)}
+        >
+          <span className="mr-2">Advanced settings</span>
+
+          {isShowAdvanced ? (
+            <UpOutlined style={{ fontSize: '12px' }} />
+          ) : (
+            <DownOutlined style={{ fontSize: '12px' }} />
+          )}
+        </div>
+      </div>
+
+      {isShowAdvanced && (
+        <div className="mb-1 flex w-full items-center">
+          <div className="min-w-[150px]">Exclude events</div>
+          <div className="flex items-center">
+            <Checkbox
+              checked={editingDatabase.mariadb?.isExcludeEvents || false}
+              onChange={(e) => {
+                if (!editingDatabase.mariadb) return;
+
+                setEditingDatabase({
+                  ...editingDatabase,
+                  mariadb: {
+                    ...editingDatabase.mariadb,
+                    isExcludeEvents: e.target.checked,
+                  },
+                });
+              }}
+            >
+              Skip events
+            </Checkbox>
+
+            <Tooltip
+              className="cursor-pointer"
+              title="Skip backing up database events. Enable this if the event scheduler is disabled on your MariaDB server."
+            >
+              <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
+            </Tooltip>
+          </div>
+        </div>
+      )}
 
       <div className="mt-5 flex">
         {isShowCancelButton && (

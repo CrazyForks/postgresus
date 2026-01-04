@@ -29,6 +29,9 @@ type MariadbDatabase struct {
 	Password string  `json:"password" gorm:"type:text;not null"`
 	Database *string `json:"database" gorm:"type:text"`
 	IsHttps  bool    `json:"isHttps"  gorm:"type:boolean;default:false"`
+
+	// advanced
+	IsExcludeEvents bool `json:"isExcludeEvents" gorm:"column:is_exclude_events;type:boolean;default:false"`
 }
 
 func (m *MariadbDatabase) TableName() string {
@@ -111,6 +114,7 @@ func (m *MariadbDatabase) Update(incoming *MariadbDatabase) {
 	m.Username = incoming.Username
 	m.Database = incoming.Database
 	m.IsHttps = incoming.IsHttps
+	m.IsExcludeEvents = incoming.IsExcludeEvents
 
 	if incoming.Password != "" {
 		m.Password = incoming.Password
