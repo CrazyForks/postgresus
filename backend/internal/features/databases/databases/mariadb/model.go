@@ -265,7 +265,7 @@ func (m *MariadbDatabase) CreateReadOnlyUser(
 	for attempt := range maxRetries {
 		// MariaDB 5.5 has a 16-character username limit, use shorter prefix
 		newUsername := fmt.Sprintf("pgs-%s", uuid.New().String()[:8])
-		newPassword := uuid.New().String()
+		newPassword := encryption.GenerateComplexPassword()
 
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {

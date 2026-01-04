@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"regexp"
 	"time"
 
@@ -290,7 +291,7 @@ func (m *MongodbDatabase) CreateReadOnlyUser(
 	maxRetries := 3
 	for attempt := range maxRetries {
 		newUsername := fmt.Sprintf("databasus-%s", uuid.New().String()[:8])
-		newPassword := uuid.New().String()
+		newPassword := encryption.GenerateComplexPassword()
 
 		adminDB := client.Database(authDB)
 		err = adminDB.RunCommand(ctx, bson.D{
@@ -339,8 +340,8 @@ func (m *MongodbDatabase) buildConnectionURI(password string) string {
 
 	return fmt.Sprintf(
 		"mongodb://%s:%s@%s:%d/%s?authSource=%s&tls=%s&connectTimeoutMS=15000",
-		m.Username,
-		password,
+		url.QueryEscape(m.Username),
+		url.QueryEscape(password),
 		m.Host,
 		m.Port,
 		m.Database,
@@ -363,8 +364,8 @@ func (m *MongodbDatabase) BuildMongodumpURI(password string) string {
 
 	return fmt.Sprintf(
 		"mongodb://%s:%s@%s:%d/?authSource=%s&tls=%s&connectTimeoutMS=15000",
-		m.Username,
-		password,
+		url.QueryEscape(m.Username),
+		url.QueryEscape(password),
 		m.Host,
 		m.Port,
 		authDB,

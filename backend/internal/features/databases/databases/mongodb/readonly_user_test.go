@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -281,7 +282,8 @@ func connectWithCredentials(
 ) *mongo.Client {
 	uri := fmt.Sprintf(
 		"mongodb://%s:%s@%s:%d/%s?authSource=%s",
-		username, password, container.Host, container.Port,
+		url.QueryEscape(username), url.QueryEscape(password),
+		container.Host, container.Port,
 		container.Database, container.AuthDatabase,
 	)
 
