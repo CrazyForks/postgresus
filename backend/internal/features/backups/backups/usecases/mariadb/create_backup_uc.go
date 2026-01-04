@@ -108,9 +108,12 @@ func (uc *CreateMariadbBackupUsecase) buildMariadbDumpArgs(
 		"--single-transaction",
 		"--routines",
 		"--triggers",
-		"--events",
 		"--quick",
 		"--verbose",
+	}
+
+	if !mdb.IsExcludeEvents {
+		args = append(args, "--events")
 	}
 
 	args = append(args, "--compress")

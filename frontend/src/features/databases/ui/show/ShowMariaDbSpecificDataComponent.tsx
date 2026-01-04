@@ -55,6 +55,13 @@ export const ShowMariaDbSpecificDataComponent = ({ database }: Props) => {
         <div className="min-w-[150px]">Use HTTPS</div>
         <div>{database.mariadb?.isHttps ? 'Yes' : 'No'}</div>
       </div>
+
+      {database.mariadb?.isExcludeEvents && (
+        <div className="mb-1 flex w-full items-center">
+          <div className="min-w-[150px]">Exclude events</div>
+          <div>Yes</div>
+        </div>
+      )}
     </div>
   );
 };
