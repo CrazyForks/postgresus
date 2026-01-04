@@ -163,7 +163,7 @@ export const RestoresComponent = ({ database, backup }: Props) => {
             loading={isRestoreInProgress}
             onClick={() => setIsShowRestore(true)}
           >
-            Restore from backup
+            Select database to restore to
           </Button>
 
           {restores.length === 0 && (
