@@ -405,12 +405,16 @@ func testBackupRestoreForVersion(t *testing.T, pgVersion string, port string, cp
 	backup := waitForBackupCompletion(t, router, database.ID, user.Token, 5*time.Minute)
 	assert.Equal(t, backups.BackupStatusCompleted, backup.Status)
 
-	newDBName := fmt.Sprintf("restoreddb_%s_cpu%d", pgVersion, cpuCount)
+	newDBName := fmt.Sprintf("restoreddb_%s_cpu%d_%s", pgVersion, cpuCount, uuid.New().String()[:8])
 	_, err = container.DB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", newDBName))
 	assert.NoError(t, err)
 
 	_, err = container.DB.Exec(fmt.Sprintf("CREATE DATABASE %s;", newDBName))
 	assert.NoError(t, err)
+
+	defer func() {
+		_, _ = container.DB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", newDBName))
+	}()
 
 	newDSN := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		container.Host, container.Port, container.Username, container.Password, newDBName)
@@ -511,12 +515,16 @@ func testSchemaSelectionAllSchemasForVersion(t *testing.T, pgVersion string, por
 	backup := waitForBackupCompletion(t, router, database.ID, user.Token, 5*time.Minute)
 	assert.Equal(t, backups.BackupStatusCompleted, backup.Status)
 
-	newDBName := "restored_all_schemas_" + pgVersion
+	newDBName := fmt.Sprintf("restored_all_schemas_%s_%s", pgVersion, uuid.New().String()[:8])
 	_, err = container.DB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", newDBName))
 	assert.NoError(t, err)
 
 	_, err = container.DB.Exec(fmt.Sprintf("CREATE DATABASE %s;", newDBName))
 	assert.NoError(t, err)
+
+	defer func() {
+		_, _ = container.DB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", newDBName))
+	}()
 
 	newDSN := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		container.Host, container.Port, container.Username, container.Password, newDBName)
@@ -635,13 +643,16 @@ func testBackupRestoreWithExcludeExtensionsForVersion(t *testing.T, pgVersion st
 	backup := waitForBackupCompletion(t, router, database.ID, user.Token, 5*time.Minute)
 	assert.Equal(t, backups.BackupStatusCompleted, backup.Status)
 
-	// Create new database for restore with extension pre-installed
-	newDBName := "restored_exclude_ext_" + pgVersion
+	newDBName := fmt.Sprintf("restored_exclude_ext_%s_%s", pgVersion, uuid.New().String()[:8])
 	_, err = container.DB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", newDBName))
 	assert.NoError(t, err)
 
 	_, err = container.DB.Exec(fmt.Sprintf("CREATE DATABASE %s;", newDBName))
 	assert.NoError(t, err)
+
+	defer func() {
+		_, _ = container.DB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", newDBName))
+	}()
 
 	newDSN := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		container.Host, container.Port, container.Username, container.Password, newDBName)
@@ -766,13 +777,16 @@ func testBackupRestoreWithoutExcludeExtensionsForVersion(
 	backup := waitForBackupCompletion(t, router, database.ID, user.Token, 5*time.Minute)
 	assert.Equal(t, backups.BackupStatusCompleted, backup.Status)
 
-	// Create new database for restore WITHOUT pre-installed extension
-	newDBName := "restored_with_ext_" + pgVersion
+	newDBName := fmt.Sprintf("restored_with_ext_%s_%s", pgVersion, uuid.New().String()[:8])
 	_, err = container.DB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", newDBName))
 	assert.NoError(t, err)
 
 	_, err = container.DB.Exec(fmt.Sprintf("CREATE DATABASE %s;", newDBName))
 	assert.NoError(t, err)
+
+	defer func() {
+		_, _ = container.DB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", newDBName))
+	}()
 
 	newDSN := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		container.Host, container.Port, container.Username, container.Password, newDBName)
@@ -897,12 +911,16 @@ func testBackupRestoreWithReadOnlyUserForVersion(t *testing.T, pgVersion string,
 	backup := waitForBackupCompletion(t, router, updatedDatabase.ID, user.Token, 5*time.Minute)
 	assert.Equal(t, backups.BackupStatusCompleted, backup.Status)
 
-	newDBName := "restoreddb_readonly"
+	newDBName := fmt.Sprintf("restoreddb_readonly_%s", uuid.New().String()[:8])
 	_, err = container.DB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", newDBName))
 	assert.NoError(t, err)
 
 	_, err = container.DB.Exec(fmt.Sprintf("CREATE DATABASE %s;", newDBName))
 	assert.NoError(t, err)
+
+	defer func() {
+		_, _ = container.DB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", newDBName))
+	}()
 
 	newDSN := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		container.Host, container.Port, container.Username, container.Password, newDBName)
@@ -1006,12 +1024,16 @@ func testSchemaSelectionOnlySpecifiedSchemasForVersion(
 	backup := waitForBackupCompletion(t, router, database.ID, user.Token, 5*time.Minute)
 	assert.Equal(t, backups.BackupStatusCompleted, backup.Status)
 
-	newDBName := "restored_specific_schemas_" + pgVersion
+	newDBName := fmt.Sprintf("restored_specific_schemas_%s_%s", pgVersion, uuid.New().String()[:8])
 	_, err = container.DB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", newDBName))
 	assert.NoError(t, err)
 
 	_, err = container.DB.Exec(fmt.Sprintf("CREATE DATABASE %s;", newDBName))
 	assert.NoError(t, err)
+
+	defer func() {
+		_, _ = container.DB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", newDBName))
+	}()
 
 	newDSN := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		container.Host, container.Port, container.Username, container.Password, newDBName)
@@ -1111,12 +1133,16 @@ func testBackupRestoreWithEncryptionForVersion(t *testing.T, pgVersion string, p
 	assert.Equal(t, backups.BackupStatusCompleted, backup.Status)
 	assert.Equal(t, backups_config.BackupEncryptionEncrypted, backup.Encryption)
 
-	newDBName := "restoreddb_encrypted"
+	newDBName := fmt.Sprintf("restoreddb_encrypted_%s", uuid.New().String()[:8])
 	_, err = container.DB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", newDBName))
 	assert.NoError(t, err)
 
 	_, err = container.DB.Exec(fmt.Sprintf("CREATE DATABASE %s;", newDBName))
 	assert.NoError(t, err)
+
+	defer func() {
+		_, _ = container.DB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", newDBName))
+	}()
 
 	newDSN := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		container.Host, container.Port, container.Username, container.Password, newDBName)

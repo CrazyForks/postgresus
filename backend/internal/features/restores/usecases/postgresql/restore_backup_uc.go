@@ -131,6 +131,7 @@ func (uc *RestorePostgresqlBackupUsecase) restoreViaStdin(
 		"--if-exists",
 		"--no-owner",
 		"--no-acl",
+		"--no-comments",
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
