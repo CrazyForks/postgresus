@@ -259,7 +259,7 @@ func (m *MysqlDatabase) CreateReadOnlyUser(
 	maxRetries := 3
 	for attempt := range maxRetries {
 		newUsername := fmt.Sprintf("databasus-%s", uuid.New().String()[:8])
-		newPassword := uuid.New().String()
+		newPassword := encryption.GenerateComplexPassword()
 
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {

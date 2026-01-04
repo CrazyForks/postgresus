@@ -383,7 +383,7 @@ func (p *PostgresqlDatabase) CreateReadOnlyUser(
 			}
 		}
 
-		newPassword := uuid.New().String()
+		newPassword := encryption.GenerateComplexPassword()
 
 		tx, err := conn.Begin(ctx)
 		if err != nil {
