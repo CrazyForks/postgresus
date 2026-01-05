@@ -2,13 +2,16 @@ package backups_config
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
+	"databasus-backend/internal/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/databases/databases/postgresql"
 	"databasus-backend/internal/features/intervals"
@@ -1434,7 +1437,13 @@ func createTestDatabaseViaAPI(
 	token string,
 	router *gin.Engine,
 ) *databases.Database {
-	testDbName := "test_db"
+	env := config.GetEnv()
+	port, err := strconv.Atoi(env.TestPostgres16Port)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to parse TEST_POSTGRES_16_PORT: %v", err))
+	}
+
+	testDbName := "testdb"
 	request := databases.Database{
 		WorkspaceID: &workspaceID,
 		Name:        name,
@@ -1442,9 +1451,9 @@ func createTestDatabaseViaAPI(
 		Postgresql: &postgresql.PostgresqlDatabase{
 			Version:  tools.PostgresqlVersion16,
 			Host:     "localhost",
-			Port:     5432,
-			Username: "postgres",
-			Password: "postgres",
+			Port:     port,
+			Username: "testuser",
+			Password: "testpassword",
 			Database: &testDbName,
 			CpuCount: 1,
 		},
@@ -1459,7 +1468,9 @@ func createTestDatabaseViaAPI(
 	)
 
 	if w.Code != http.StatusCreated {
-		panic("Failed to create database")
+		panic(
+			fmt.Sprintf("Failed to create database. Status: %d, Body: %s", w.Code, w.Body.String()),
+		)
 	}
 
 	var database databases.Database

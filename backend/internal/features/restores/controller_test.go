@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
+	"databasus-backend/internal/config"
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/backups/backups"
 	backups_config "databasus-backend/internal/features/backups/config"
@@ -390,20 +392,11 @@ func createTestDatabase(
 	token string,
 	router *gin.Engine,
 ) *databases.Database {
-	testDbName := "test_db"
 	request := databases.Database{
 		WorkspaceID: &workspaceID,
 		Name:        name,
 		Type:        databases.DatabaseTypePostgres,
-		Postgresql: &postgresql.PostgresqlDatabase{
-			Version:  tools.PostgresqlVersion16,
-			Host:     "localhost",
-			Port:     5432,
-			Username: "postgres",
-			Password: "postgres",
-			Database: &testDbName,
-			CpuCount: 1,
-		},
+		Postgresql:  databases.GetTestPostgresConfig(),
 	}
 
 	w := workspaces_testing.MakeAPIRequest(
@@ -434,7 +427,18 @@ func createTestMySQLDatabase(
 	token string,
 	router *gin.Engine,
 ) *databases.Database {
-	testDbName := "test_db"
+	env := config.GetEnv()
+	portStr := env.TestMysql80Port
+	if portStr == "" {
+		portStr = "33080"
+	}
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to parse TEST_MYSQL_80_PORT: %v", err))
+	}
+
+	testDbName := "testdb"
 	request := databases.Database{
 		WorkspaceID: &workspaceID,
 		Name:        name,
@@ -442,9 +446,9 @@ func createTestMySQLDatabase(
 		Mysql: &mysql.MysqlDatabase{
 			Version:  tools.MysqlVersion80,
 			Host:     "localhost",
-			Port:     3306,
-			Username: "root",
-			Password: "password",
+			Port:     port,
+			Username: "testuser",
+			Password: "testpassword",
 			Database: &testDbName,
 		},
 	}

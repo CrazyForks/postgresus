@@ -392,13 +392,13 @@ func (c *DatabaseController) IsUserReadOnly(ctx *gin.Context) {
 		return
 	}
 
-	isReadOnly, err := c.databaseService.IsUserReadOnly(user, &request)
+	isReadOnly, privileges, err := c.databaseService.IsUserReadOnly(user, &request)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, IsReadOnlyResponse{IsReadOnly: isReadOnly})
+	ctx.JSON(http.StatusOK, IsReadOnlyResponse{IsReadOnly: isReadOnly, Privileges: privileges})
 }
 
 // CreateReadOnlyUser

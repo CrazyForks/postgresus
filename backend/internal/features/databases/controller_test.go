@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
+	"databasus-backend/internal/config"
 	"databasus-backend/internal/features/databases/databases/mariadb"
 	"databasus-backend/internal/features/databases/databases/mongodb"
 	"databasus-backend/internal/features/databases/databases/postgresql"
@@ -30,6 +32,71 @@ func createTestRouter() *gin.Engine {
 		GetDatabaseController(),
 	)
 	return router
+}
+
+func getTestPostgresConfig() *postgresql.PostgresqlDatabase {
+	env := config.GetEnv()
+	port, err := strconv.Atoi(env.TestPostgres16Port)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to parse TEST_POSTGRES_16_PORT: %v", err))
+	}
+
+	testDbName := "testdb"
+	return &postgresql.PostgresqlDatabase{
+		Version:  tools.PostgresqlVersion16,
+		Host:     "localhost",
+		Port:     port,
+		Username: "testuser",
+		Password: "testpassword",
+		Database: &testDbName,
+		CpuCount: 1,
+	}
+}
+
+func getTestMariadbConfig() *mariadb.MariadbDatabase {
+	env := config.GetEnv()
+	portStr := env.TestMariadb1011Port
+	if portStr == "" {
+		portStr = "33111"
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to parse TEST_MARIADB_1011_PORT: %v", err))
+	}
+
+	testDbName := "testdb"
+	return &mariadb.MariadbDatabase{
+		Version:  tools.MariadbVersion1011,
+		Host:     "localhost",
+		Port:     port,
+		Username: "testuser",
+		Password: "testpassword",
+		Database: &testDbName,
+	}
+}
+
+func getTestMongodbConfig() *mongodb.MongodbDatabase {
+	env := config.GetEnv()
+	portStr := env.TestMongodb70Port
+	if portStr == "" {
+		portStr = "27070"
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to parse TEST_MONGODB_70_PORT: %v", err))
+	}
+
+	return &mongodb.MongodbDatabase{
+		Version:      tools.MongodbVersion7,
+		Host:         "localhost",
+		Port:         port,
+		Username:     "root",
+		Password:     "rootpassword",
+		Database:     "testdb",
+		AuthDatabase: "admin",
+		IsHttps:      false,
+		CpuCount:     1,
+	}
 }
 
 func Test_CreateDatabase_PermissionsEnforced(t *testing.T) {
@@ -88,20 +155,11 @@ func Test_CreateDatabase_PermissionsEnforced(t *testing.T) {
 				testUserToken = member.Token
 			}
 
-			testDbName := "test_db"
 			request := Database{
 				Name:        "Test Database",
 				WorkspaceID: &workspace.ID,
 				Type:        DatabaseTypePostgres,
-				Postgresql: &postgresql.PostgresqlDatabase{
-					Version:  tools.PostgresqlVersion16,
-					Host:     "localhost",
-					Port:     5432,
-					Username: "postgres",
-					Password: "postgres",
-					Database: &testDbName,
-					CpuCount: 1,
-				},
+				Postgresql:  getTestPostgresConfig(),
 			}
 
 			var response Database
@@ -132,20 +190,11 @@ func Test_CreateDatabase_WhenUserIsNotWorkspaceMember_ReturnsForbidden(t *testin
 
 	nonMember := users_testing.CreateTestUser(users_enums.UserRoleMember)
 
-	testDbName := "test_db"
 	request := Database{
 		Name:        "Test Database",
 		WorkspaceID: &workspace.ID,
 		Type:        DatabaseTypePostgres,
-		Postgresql: &postgresql.PostgresqlDatabase{
-			Version:  tools.PostgresqlVersion16,
-			Host:     "localhost",
-			Port:     5432,
-			Username: "postgres",
-			Password: "postgres",
-			Database: &testDbName,
-			CpuCount: 1,
-		},
+		Postgresql:  getTestPostgresConfig(),
 	}
 
 	testResp := test_utils.MakePostRequest(
@@ -737,7 +786,13 @@ func createTestDatabaseViaAPI(
 	token string,
 	router *gin.Engine,
 ) *Database {
-	testDbName := "test_db"
+	env := config.GetEnv()
+	port, err := strconv.Atoi(env.TestPostgres16Port)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to parse TEST_POSTGRES_16_PORT: %v", err))
+	}
+
+	testDbName := "testdb"
 	request := Database{
 		Name:        name,
 		WorkspaceID: &workspaceID,
@@ -745,9 +800,9 @@ func createTestDatabaseViaAPI(
 		Postgresql: &postgresql.PostgresqlDatabase{
 			Version:  tools.PostgresqlVersion16,
 			Host:     "localhost",
-			Port:     5432,
-			Username: "postgres",
-			Password: "postgres",
+			Port:     port,
+			Username: "testuser",
+			Password: "testpassword",
 			Database: &testDbName,
 			CpuCount: 1,
 		},
@@ -780,21 +835,14 @@ func Test_CreateDatabase_PasswordIsEncryptedInDB(t *testing.T) {
 	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
 	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
 
-	testDbName := "test_db"
-	plainPassword := "my-super-secret-password-123"
+	pgConfig := getTestPostgresConfig()
+	plainPassword := "testpassword"
+	pgConfig.Password = plainPassword
 	request := Database{
 		Name:        "Test Database",
 		WorkspaceID: &workspace.ID,
 		Type:        DatabaseTypePostgres,
-		Postgresql: &postgresql.PostgresqlDatabase{
-			Version:  tools.PostgresqlVersion16,
-			Host:     "localhost",
-			Port:     5432,
-			Username: "postgres",
-			Password: plainPassword,
-			Database: &testDbName,
-			CpuCount: 1,
-		},
+		Postgresql:  pgConfig,
 	}
 
 	var createdDatabase Database
@@ -854,38 +902,23 @@ func Test_DatabaseSensitiveDataLifecycle_AllTypes(t *testing.T) {
 			name:         "PostgreSQL Database",
 			databaseType: DatabaseTypePostgres,
 			createDatabase: func(workspaceID uuid.UUID) *Database {
-				testDbName := "test_db"
+				pgConfig := getTestPostgresConfig()
 				return &Database{
 					WorkspaceID: &workspaceID,
 					Name:        "Test PostgreSQL Database",
 					Type:        DatabaseTypePostgres,
-					Postgresql: &postgresql.PostgresqlDatabase{
-						Version:  tools.PostgresqlVersion16,
-						Host:     "localhost",
-						Port:     5432,
-						Username: "postgres",
-						Password: "original-password-secret",
-						Database: &testDbName,
-						CpuCount: 1,
-					},
+					Postgresql:  pgConfig,
 				}
 			},
 			updateDatabase: func(workspaceID uuid.UUID, databaseID uuid.UUID) *Database {
-				testDbName := "updated_test_db"
+				pgConfig := getTestPostgresConfig()
+				pgConfig.Password = ""
 				return &Database{
 					ID:          databaseID,
 					WorkspaceID: &workspaceID,
 					Name:        "Updated PostgreSQL Database",
 					Type:        DatabaseTypePostgres,
-					Postgresql: &postgresql.PostgresqlDatabase{
-						Version:  tools.PostgresqlVersion17,
-						Host:     "updated-host",
-						Port:     5433,
-						Username: "updated_user",
-						Password: "",
-						Database: &testDbName,
-						CpuCount: 1,
-					},
+					Postgresql:  pgConfig,
 				}
 			},
 			verifySensitiveData: func(t *testing.T, database *Database) {
@@ -895,7 +928,7 @@ func Test_DatabaseSensitiveDataLifecycle_AllTypes(t *testing.T) {
 				encryptor := encryption.GetFieldEncryptor()
 				decrypted, err := encryptor.Decrypt(database.ID, database.Postgresql.Password)
 				assert.NoError(t, err)
-				assert.Equal(t, "original-password-secret", decrypted)
+				assert.Equal(t, "testpassword", decrypted)
 			},
 			verifyHiddenData: func(t *testing.T, database *Database) {
 				assert.Equal(t, "", database.Postgresql.Password)
@@ -905,36 +938,23 @@ func Test_DatabaseSensitiveDataLifecycle_AllTypes(t *testing.T) {
 			name:         "MariaDB Database",
 			databaseType: DatabaseTypeMariadb,
 			createDatabase: func(workspaceID uuid.UUID) *Database {
-				testDbName := "test_db"
+				mariaConfig := getTestMariadbConfig()
 				return &Database{
 					WorkspaceID: &workspaceID,
 					Name:        "Test MariaDB Database",
 					Type:        DatabaseTypeMariadb,
-					Mariadb: &mariadb.MariadbDatabase{
-						Version:  tools.MariadbVersion1011,
-						Host:     "localhost",
-						Port:     3306,
-						Username: "root",
-						Password: "original-password-secret",
-						Database: &testDbName,
-					},
+					Mariadb:     mariaConfig,
 				}
 			},
 			updateDatabase: func(workspaceID uuid.UUID, databaseID uuid.UUID) *Database {
-				testDbName := "updated_test_db"
+				mariaConfig := getTestMariadbConfig()
+				mariaConfig.Password = ""
 				return &Database{
 					ID:          databaseID,
 					WorkspaceID: &workspaceID,
 					Name:        "Updated MariaDB Database",
 					Type:        DatabaseTypeMariadb,
-					Mariadb: &mariadb.MariadbDatabase{
-						Version:  tools.MariadbVersion114,
-						Host:     "updated-host",
-						Port:     3307,
-						Username: "updated_user",
-						Password: "",
-						Database: &testDbName,
-					},
+					Mariadb:     mariaConfig,
 				}
 			},
 			verifySensitiveData: func(t *testing.T, database *Database) {
@@ -944,7 +964,7 @@ func Test_DatabaseSensitiveDataLifecycle_AllTypes(t *testing.T) {
 				encryptor := encryption.GetFieldEncryptor()
 				decrypted, err := encryptor.Decrypt(database.ID, database.Mariadb.Password)
 				assert.NoError(t, err)
-				assert.Equal(t, "original-password-secret", decrypted)
+				assert.Equal(t, "testpassword", decrypted)
 			},
 			verifyHiddenData: func(t *testing.T, database *Database) {
 				assert.Equal(t, "", database.Mariadb.Password)
@@ -954,40 +974,23 @@ func Test_DatabaseSensitiveDataLifecycle_AllTypes(t *testing.T) {
 			name:         "MongoDB Database",
 			databaseType: DatabaseTypeMongodb,
 			createDatabase: func(workspaceID uuid.UUID) *Database {
+				mongoConfig := getTestMongodbConfig()
 				return &Database{
 					WorkspaceID: &workspaceID,
 					Name:        "Test MongoDB Database",
 					Type:        DatabaseTypeMongodb,
-					Mongodb: &mongodb.MongodbDatabase{
-						Version:      tools.MongodbVersion7,
-						Host:         "localhost",
-						Port:         27017,
-						Username:     "root",
-						Password:     "original-password-secret",
-						Database:     "test_db",
-						AuthDatabase: "admin",
-						IsHttps:      false,
-						CpuCount:     1,
-					},
+					Mongodb:     mongoConfig,
 				}
 			},
 			updateDatabase: func(workspaceID uuid.UUID, databaseID uuid.UUID) *Database {
+				mongoConfig := getTestMongodbConfig()
+				mongoConfig.Password = ""
 				return &Database{
 					ID:          databaseID,
 					WorkspaceID: &workspaceID,
 					Name:        "Updated MongoDB Database",
 					Type:        DatabaseTypeMongodb,
-					Mongodb: &mongodb.MongodbDatabase{
-						Version:      tools.MongodbVersion8,
-						Host:         "updated-host",
-						Port:         27018,
-						Username:     "updated_user",
-						Password:     "",
-						Database:     "updated_test_db",
-						AuthDatabase: "admin",
-						IsHttps:      false,
-						CpuCount:     1,
-					},
+					Mongodb:     mongoConfig,
 				}
 			},
 			verifySensitiveData: func(t *testing.T, database *Database) {
@@ -997,7 +1000,7 @@ func Test_DatabaseSensitiveDataLifecycle_AllTypes(t *testing.T) {
 				encryptor := encryption.GetFieldEncryptor()
 				decrypted, err := encryptor.Decrypt(database.ID, database.Mongodb.Password)
 				assert.NoError(t, err)
-				assert.Equal(t, "original-password-secret", decrypted)
+				assert.Equal(t, "rootpassword", decrypted)
 			},
 			verifyHiddenData: func(t *testing.T, database *Database) {
 				assert.Equal(t, "", database.Mongodb.Password)

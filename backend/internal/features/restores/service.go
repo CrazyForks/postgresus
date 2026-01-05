@@ -229,8 +229,8 @@ func (s *RestoreService) RestoreBackup(
 		Mongodb:    requestDTO.MongodbDatabase,
 	}
 
-	if err := restoringToDB.PopulateVersionIfEmpty(s.logger, s.fieldEncryptor); err != nil {
-		return fmt.Errorf("failed to auto-detect database version: %w", err)
+	if err := restoringToDB.PopulateDbData(s.logger, s.fieldEncryptor); err != nil {
+		return fmt.Errorf("failed to auto-detect database data: %w", err)
 	}
 
 	isExcludeExtensions := false

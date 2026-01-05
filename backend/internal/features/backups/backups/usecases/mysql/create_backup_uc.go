@@ -105,11 +105,16 @@ func (uc *CreateMysqlBackupUsecase) buildMysqldumpArgs(my *mysqltypes.MysqlDatab
 		"--user=" + my.Username,
 		"--single-transaction",
 		"--routines",
-		"--triggers",
-		"--events",
 		"--set-gtid-purged=OFF",
 		"--quick",
 		"--verbose",
+	}
+
+	if my.HasPrivilege("TRIGGER") {
+		args = append(args, "--triggers")
+	}
+	if my.HasPrivilege("EVENT") {
+		args = append(args, "--events")
 	}
 
 	args = append(args, uc.getNetworkCompressionArgs(my.Version)...)

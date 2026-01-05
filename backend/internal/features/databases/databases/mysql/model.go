@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"sort"
+	"strings"
 	"time"
 
 	"databasus-backend/internal/util/encryption"
@@ -22,12 +24,13 @@ type MysqlDatabase struct {
 
 	Version tools.MysqlVersion `json:"version" gorm:"type:text;not null"`
 
-	Host     string  `json:"host"     gorm:"type:text;not null"`
-	Port     int     `json:"port"     gorm:"type:int;not null"`
-	Username string  `json:"username" gorm:"type:text;not null"`
-	Password string  `json:"password" gorm:"type:text;not null"`
-	Database *string `json:"database" gorm:"type:text"`
-	IsHttps  bool    `json:"isHttps"  gorm:"type:boolean;default:false"`
+	Host       string  `json:"host"       gorm:"type:text;not null"`
+	Port       int     `json:"port"       gorm:"type:int;not null"`
+	Username   string  `json:"username"   gorm:"type:text;not null"`
+	Password   string  `json:"password"   gorm:"type:text;not null"`
+	Database   *string `json:"database"   gorm:"type:text"`
+	IsHttps    bool    `json:"isHttps"    gorm:"type:boolean;default:false"`
+	Privileges string  `json:"privileges" gorm:"column:privileges;type:text;not null;default:''"`
 }
 
 func (m *MysqlDatabase) TableName() string {
@@ -93,6 +96,16 @@ func (m *MysqlDatabase) TestConnection(
 	}
 	m.Version = detectedVersion
 
+	privileges, err := detectPrivileges(ctx, db, *m.Database)
+	if err != nil {
+		return err
+	}
+	m.Privileges = privileges
+
+	if err := checkBackupPermissions(m.Privileges); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -110,6 +123,7 @@ func (m *MysqlDatabase) Update(incoming *MysqlDatabase) {
 	m.Username = incoming.Username
 	m.Database = incoming.Database
 	m.IsHttps = incoming.IsHttps
+	m.Privileges = incoming.Privileges
 
 	if incoming.Password != "" {
 		m.Password = incoming.Password
@@ -130,15 +144,48 @@ func (m *MysqlDatabase) EncryptSensitiveFields(
 	return nil
 }
 
-func (m *MysqlDatabase) PopulateVersionIfEmpty(
+func (m *MysqlDatabase) PopulateDbData(
 	logger *slog.Logger,
 	encryptor encryption.FieldEncryptor,
 	databaseID uuid.UUID,
 ) error {
-	if m.Version != "" {
+	if m.Database == nil || *m.Database == "" {
 		return nil
 	}
-	return m.PopulateVersion(logger, encryptor, databaseID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	password, err := decryptPasswordIfNeeded(m.Password, encryptor, databaseID)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt password: %w", err)
+	}
+
+	dsn := m.buildDSN(password, *m.Database)
+
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			logger.Error("Failed to close connection", "error", closeErr)
+		}
+	}()
+
+	detectedVersion, err := detectMysqlVersion(ctx, db)
+	if err != nil {
+		return err
+	}
+	m.Version = detectedVersion
+
+	privileges, err := detectPrivileges(ctx, db, *m.Database)
+	if err != nil {
+		return err
+	}
+	m.Privileges = privileges
+
+	return nil
 }
 
 func (m *MysqlDatabase) PopulateVersion(
@@ -174,8 +221,8 @@ func (m *MysqlDatabase) PopulateVersion(
 	if err != nil {
 		return err
 	}
-
 	m.Version = detectedVersion
+
 	return nil
 }
 
@@ -184,17 +231,17 @@ func (m *MysqlDatabase) IsUserReadOnly(
 	logger *slog.Logger,
 	encryptor encryption.FieldEncryptor,
 	databaseID uuid.UUID,
-) (bool, error) {
+) (bool, []string, error) {
 	password, err := decryptPasswordIfNeeded(m.Password, encryptor, databaseID)
 	if err != nil {
-		return false, fmt.Errorf("failed to decrypt password: %w", err)
+		return false, nil, fmt.Errorf("failed to decrypt password: %w", err)
 	}
 
 	dsn := m.buildDSN(password, *m.Database)
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return false, fmt.Errorf("failed to connect to database: %w", err)
+		return false, nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 	defer func() {
 		if closeErr := db.Close(); closeErr != nil {
@@ -204,33 +251,45 @@ func (m *MysqlDatabase) IsUserReadOnly(
 
 	rows, err := db.QueryContext(ctx, "SHOW GRANTS FOR CURRENT_USER()")
 	if err != nil {
-		return false, fmt.Errorf("failed to check grants: %w", err)
+		return false, nil, fmt.Errorf("failed to check grants: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
 	writePrivileges := []string{
 		"INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER",
 		"INDEX", "GRANT OPTION", "ALL PRIVILEGES", "SUPER",
+		"EXECUTE", "FILE", "RELOAD", "SHUTDOWN", "CREATE ROUTINE",
+		"ALTER ROUTINE", "CREATE USER",
+		"CREATE TABLESPACE", "REFERENCES",
 	}
+
+	detectedPrivileges := make(map[string]bool)
 
 	for rows.Next() {
 		var grant string
 		if err := rows.Scan(&grant); err != nil {
-			return false, fmt.Errorf("failed to scan grant: %w", err)
+			return false, nil, fmt.Errorf("failed to scan grant: %w", err)
 		}
 
 		for _, priv := range writePrivileges {
 			if regexp.MustCompile(`(?i)\b` + priv + `\b`).MatchString(grant) {
-				return false, nil
+				detectedPrivileges[priv] = true
 			}
 		}
 	}
 
 	if err := rows.Err(); err != nil {
-		return false, fmt.Errorf("error iterating grants: %w", err)
+		return false, nil, fmt.Errorf("error iterating grants: %w", err)
 	}
 
-	return true, nil
+	privileges := make([]string, 0, len(detectedPrivileges))
+	for priv := range detectedPrivileges {
+		privileges = append(privileges, priv)
+	}
+
+	isReadOnly := len(privileges) == 0
+
+	return isReadOnly, privileges, nil
 }
 
 func (m *MysqlDatabase) CreateReadOnlyUser(
@@ -325,10 +384,23 @@ func (m *MysqlDatabase) CreateReadOnlyUser(
 	return "", "", errors.New("failed to generate unique username after 3 attempts")
 }
 
+func (m *MysqlDatabase) HasPrivilege(priv string) bool {
+	return HasPrivilege(m.Privileges, priv)
+}
+
+func HasPrivilege(privileges, priv string) bool {
+	for p := range strings.SplitSeq(privileges, ",") {
+		if strings.TrimSpace(p) == priv {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *MysqlDatabase) buildDSN(password string, database string) string {
 	tlsConfig := "false"
 	if m.IsHttps {
-		tlsConfig = "true"
+		tlsConfig = "skip-verify"
 	}
 
 	return fmt.Sprintf(
@@ -386,6 +458,99 @@ func mapMysql8xVersion(minor string) tools.MysqlVersion {
 	default:
 		return tools.MysqlVersion84
 	}
+}
+
+// detectPrivileges detects backup-related privileges and returns them as comma-separated string
+func detectPrivileges(ctx context.Context, db *sql.DB, database string) (string, error) {
+	rows, err := db.QueryContext(ctx, "SHOW GRANTS FOR CURRENT_USER()")
+	if err != nil {
+		return "", fmt.Errorf("failed to check grants: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	backupPrivileges := []string{
+		"SELECT", "SHOW VIEW", "LOCK TABLES", "TRIGGER", "EVENT",
+	}
+
+	detectedPrivileges := make(map[string]bool)
+	hasProcess := false
+	hasAllPrivileges := false
+
+	escapedDB := strings.ReplaceAll(database, "_", "\\_")
+	dbPattern := regexp.MustCompile(
+		fmt.Sprintf("(?i)ON\\s+[`'\"]?(%s|\\*)[`'\"]?\\.\\*", regexp.QuoteMeta(escapedDB)),
+	)
+	globalPattern := regexp.MustCompile(`(?i)ON\s+\*\.\*`)
+
+	for rows.Next() {
+		var grant string
+		if err := rows.Scan(&grant); err != nil {
+			return "", fmt.Errorf("failed to scan grant: %w", err)
+		}
+
+		if regexp.MustCompile(`(?i)\bALL\s+PRIVILEGES\b`).MatchString(grant) {
+			if globalPattern.MatchString(grant) || dbPattern.MatchString(grant) {
+				hasAllPrivileges = true
+			}
+		}
+
+		if globalPattern.MatchString(grant) || dbPattern.MatchString(grant) {
+			for _, priv := range backupPrivileges {
+				if regexp.MustCompile(`(?i)\b` + priv + `\b`).MatchString(grant) {
+					detectedPrivileges[priv] = true
+				}
+			}
+		}
+
+		if globalPattern.MatchString(grant) &&
+			regexp.MustCompile(`(?i)\bPROCESS\b`).MatchString(grant) {
+			hasProcess = true
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("error iterating grants: %w", err)
+	}
+
+	if hasAllPrivileges {
+		for _, priv := range backupPrivileges {
+			detectedPrivileges[priv] = true
+		}
+		hasProcess = true
+	}
+
+	privileges := make([]string, 0, len(detectedPrivileges)+1)
+	for priv := range detectedPrivileges {
+		privileges = append(privileges, priv)
+	}
+	if hasProcess {
+		privileges = append(privileges, "PROCESS")
+	}
+
+	sort.Strings(privileges)
+	return strings.Join(privileges, ","), nil
+}
+
+// checkBackupPermissions verifies the user has sufficient privileges for mysqldump backup.
+// Required: SELECT, SHOW VIEW, PROCESS. Optional: LOCK TABLES, TRIGGER, EVENT.
+func checkBackupPermissions(privileges string) error {
+	requiredPrivileges := []string{"SELECT", "SHOW VIEW", "PROCESS"}
+
+	var missingPrivileges []string
+	for _, priv := range requiredPrivileges {
+		if !HasPrivilege(privileges, priv) {
+			missingPrivileges = append(missingPrivileges, priv)
+		}
+	}
+
+	if len(missingPrivileges) > 0 {
+		return fmt.Errorf(
+			"insufficient permissions for backup. Missing: %s. Required: SELECT, SHOW VIEW, PROCESS",
+			strings.Join(missingPrivileges, ", "),
+		)
+	}
+
+	return nil
 }
 
 func decryptPasswordIfNeeded(

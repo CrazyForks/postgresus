@@ -6,5 +6,6 @@ type CreateReadOnlyUserResponse struct {
 }
 
 type IsReadOnlyResponse struct {
-	IsReadOnly bool `json:"isReadOnly"`
+	IsReadOnly bool     `json:"isReadOnly"`
+	Privileges []string `json:"privileges"`
 }

@@ -20,6 +20,138 @@ import (
 	"databasus-backend/internal/util/tools"
 )
 
+func Test_TestConnection_InsufficientPermissions_ReturnsError(t *testing.T) {
+	env := config.GetEnv()
+	cases := []struct {
+		name    string
+		version tools.MongodbVersion
+		port    string
+	}{
+		{"MongoDB 4.0", tools.MongodbVersion4, env.TestMongodb40Port},
+		{"MongoDB 4.2", tools.MongodbVersion4, env.TestMongodb42Port},
+		{"MongoDB 4.4", tools.MongodbVersion4, env.TestMongodb44Port},
+		{"MongoDB 5.0", tools.MongodbVersion5, env.TestMongodb50Port},
+		{"MongoDB 6.0", tools.MongodbVersion6, env.TestMongodb60Port},
+		{"MongoDB 7.0", tools.MongodbVersion7, env.TestMongodb70Port},
+		{"MongoDB 8.2", tools.MongodbVersion8, env.TestMongodb82Port},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			container := connectToMongodbContainer(t, tc.port, tc.version)
+			defer container.Client.Disconnect(context.Background())
+
+			ctx := context.Background()
+			db := container.Client.Database(container.Database)
+
+			_ = db.Collection("permission_test").Drop(ctx)
+			_, err := db.Collection("permission_test").InsertOne(ctx, bson.M{"data": "test1"})
+			assert.NoError(t, err)
+
+			limitedUsername := fmt.Sprintf("limited_%s", uuid.New().String()[:8])
+			limitedPassword := "limitedpassword123"
+
+			adminDB := container.Client.Database(container.AuthDatabase)
+			err = adminDB.RunCommand(ctx, bson.D{
+				{Key: "createUser", Value: limitedUsername},
+				{Key: "pwd", Value: limitedPassword},
+				{Key: "roles", Value: bson.A{}},
+			}).Err()
+			assert.NoError(t, err)
+
+			defer dropUserSafe(container.Client, limitedUsername, container.AuthDatabase)
+
+			mongodbModel := &MongodbDatabase{
+				Version:      tc.version,
+				Host:         container.Host,
+				Port:         container.Port,
+				Username:     limitedUsername,
+				Password:     limitedPassword,
+				Database:     container.Database,
+				AuthDatabase: container.AuthDatabase,
+				IsHttps:      false,
+				CpuCount:     1,
+			}
+
+			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+			err = mongodbModel.TestConnection(logger, nil, uuid.New())
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "insufficient permissions")
+		})
+	}
+}
+
+func Test_TestConnection_SufficientPermissions_Success(t *testing.T) {
+	env := config.GetEnv()
+	cases := []struct {
+		name    string
+		version tools.MongodbVersion
+		port    string
+	}{
+		{"MongoDB 4.0", tools.MongodbVersion4, env.TestMongodb40Port},
+		{"MongoDB 4.2", tools.MongodbVersion4, env.TestMongodb42Port},
+		{"MongoDB 4.4", tools.MongodbVersion4, env.TestMongodb44Port},
+		{"MongoDB 5.0", tools.MongodbVersion5, env.TestMongodb50Port},
+		{"MongoDB 6.0", tools.MongodbVersion6, env.TestMongodb60Port},
+		{"MongoDB 7.0", tools.MongodbVersion7, env.TestMongodb70Port},
+		{"MongoDB 8.2", tools.MongodbVersion8, env.TestMongodb82Port},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			container := connectToMongodbContainer(t, tc.port, tc.version)
+			defer container.Client.Disconnect(context.Background())
+
+			ctx := context.Background()
+			db := container.Client.Database(container.Database)
+
+			_ = db.Collection("backup_test").Drop(ctx)
+			_, err := db.Collection("backup_test").InsertOne(ctx, bson.M{"data": "test1"})
+			assert.NoError(t, err)
+
+			backupUsername := fmt.Sprintf("backup_%s", uuid.New().String()[:8])
+			backupPassword := "backuppassword123"
+
+			adminDB := container.Client.Database(container.AuthDatabase)
+			err = adminDB.RunCommand(ctx, bson.D{
+				{Key: "createUser", Value: backupUsername},
+				{Key: "pwd", Value: backupPassword},
+				{Key: "roles", Value: bson.A{
+					bson.D{
+						{Key: "role", Value: "read"},
+						{Key: "db", Value: container.Database},
+					},
+				}},
+			}).Err()
+			assert.NoError(t, err)
+
+			defer dropUserSafe(container.Client, backupUsername, container.AuthDatabase)
+
+			mongodbModel := &MongodbDatabase{
+				Version:      tc.version,
+				Host:         container.Host,
+				Port:         container.Port,
+				Username:     backupUsername,
+				Password:     backupPassword,
+				Database:     container.Database,
+				AuthDatabase: container.AuthDatabase,
+				IsHttps:      false,
+				CpuCount:     1,
+			}
+
+			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+			err = mongodbModel.TestConnection(logger, nil, uuid.New())
+			assert.NoError(t, err)
+		})
+	}
+}
+
 func Test_IsUserReadOnly_AdminUser_ReturnsFalse(t *testing.T) {
 	env := config.GetEnv()
 	cases := []struct {
@@ -47,11 +179,50 @@ func Test_IsUserReadOnly_AdminUser_ReturnsFalse(t *testing.T) {
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 			ctx := context.Background()
 
-			isReadOnly, err := mongodbModel.IsUserReadOnly(ctx, logger, nil, uuid.New())
+			isReadOnly, roles, err := mongodbModel.IsUserReadOnly(ctx, logger, nil, uuid.New())
 			assert.NoError(t, err)
 			assert.False(t, isReadOnly, "Root user should not be read-only")
+			assert.NotEmpty(t, roles, "Root user should have roles")
 		})
 	}
+}
+
+func Test_IsUserReadOnly_ReadOnlyUser_ReturnsTrue(t *testing.T) {
+	env := config.GetEnv()
+	container := connectToMongodbContainer(t, env.TestMongodb70Port, tools.MongodbVersion7)
+	defer container.Client.Disconnect(context.Background())
+
+	ctx := context.Background()
+	db := container.Client.Database(container.Database)
+
+	_ = db.Collection("readonly_check_test").Drop(ctx)
+	_, err := db.Collection("readonly_check_test").InsertOne(ctx, bson.M{"data": "test1"})
+	assert.NoError(t, err)
+
+	mongodbModel := createMongodbModel(container)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	username, password, err := mongodbModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
+	assert.NoError(t, err)
+
+	readOnlyModel := &MongodbDatabase{
+		Version:      mongodbModel.Version,
+		Host:         mongodbModel.Host,
+		Port:         mongodbModel.Port,
+		Username:     username,
+		Password:     password,
+		Database:     mongodbModel.Database,
+		AuthDatabase: mongodbModel.AuthDatabase,
+		IsHttps:      false,
+		CpuCount:     1,
+	}
+
+	isReadOnly, roles, err := readOnlyModel.IsUserReadOnly(ctx, logger, nil, uuid.New())
+	assert.NoError(t, err)
+	assert.True(t, isReadOnly, "Read-only user should be read-only")
+	assert.NotEmpty(t, roles, "Read-only user should have roles (read, backup)")
+
+	dropUserSafe(container.Client, username, container.AuthDatabase)
 }
 
 func Test_CreateReadOnlyUser_UserCanReadButNotWrite(t *testing.T) {
@@ -272,6 +443,7 @@ func createMongodbModel(container *MongodbContainer) *MongodbDatabase {
 		Database:     container.Database,
 		AuthDatabase: container.AuthDatabase,
 		IsHttps:      false,
+		CpuCount:     1,
 	}
 }
 

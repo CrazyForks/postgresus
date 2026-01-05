@@ -11,6 +11,8 @@ interface Props {
   onContinue: () => void;
 }
 
+const PRIVILEGES_TRUNCATE_LENGTH = 50;
+
 export const CreateReadOnlyComponent = ({
   database,
   onReadOnlyUserUpdated,
@@ -20,6 +22,8 @@ export const CreateReadOnlyComponent = ({
   const [isCheckingReadOnlyUser, setIsCheckingReadOnlyUser] = useState(false);
   const [isCreatingReadOnlyUser, setIsCreatingReadOnlyUser] = useState(false);
   const [isShowSkipConfirmation, setShowSkipConfirmation] = useState(false);
+  const [privileges, setPrivileges] = useState<string[]>([]);
+  const [isPrivilegesExpanded, setIsPrivilegesExpanded] = useState(false);
 
   const isPostgres = database.type === DatabaseType.POSTGRES;
   const isMysql = database.type === DatabaseType.MYSQL;
@@ -35,14 +39,31 @@ export const CreateReadOnlyComponent = ({
           ? 'MongoDB'
           : 'database';
 
+  const privilegesLabel = isMongodb ? 'roles' : 'privileges';
+
   const checkReadOnlyUser = async (): Promise<boolean> => {
     try {
       const response = await databaseApi.isUserReadOnly(database);
+      setPrivileges(response.privileges || []);
       return response.isReadOnly;
     } catch (e) {
       alert((e as Error).message);
       return false;
     }
+  };
+
+  const getPrivilegesDisplay = () => {
+    const fullText = privileges.join(', ');
+    if (isPrivilegesExpanded || fullText.length <= PRIVILEGES_TRUNCATE_LENGTH) {
+      return fullText;
+    }
+
+    return fullText.substring(0, PRIVILEGES_TRUNCATE_LENGTH) + '...';
+  };
+
+  const shouldShowExpandToggle = () => {
+    const fullText = privileges.join(', ');
+    return fullText.length > PRIVILEGES_TRUNCATE_LENGTH;
   };
 
   const createReadOnlyUser = async () => {
@@ -138,6 +159,31 @@ export const CreateReadOnlyComponent = ({
         <p className="mt-3">
           <b>Read-only user allows to avoid storing credentials with write access at all</b>. Even
           in the worst case of hacking, nobody will be able to corrupt your data.
+        </p>
+
+        <p className="mt-3">
+          {privileges.length === 0 ? (
+            <>
+              Current user has <b>no write {privilegesLabel}</b>.
+            </>
+          ) : (
+            <>
+              Current user has the following write {privilegesLabel}:{' '}
+              <span
+                className={shouldShowExpandToggle() ? 'cursor-pointer hover:opacity-80' : ''}
+                onClick={() =>
+                  shouldShowExpandToggle() && setIsPrivilegesExpanded(!isPrivilegesExpanded)
+                }
+              >
+                {getPrivilegesDisplay()}
+                {shouldShowExpandToggle() && (
+                  <span className="ml-1 text-xs text-blue-600 hover:opacity-80">
+                    ({isPrivilegesExpanded ? 'collapse' : 'expand'})
+                  </span>
+                )}
+              </span>
+            </>
+          )}
         </p>
       </div>
 
