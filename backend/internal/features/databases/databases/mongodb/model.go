@@ -140,14 +140,11 @@ func (m *MongodbDatabase) EncryptSensitiveFields(
 	return nil
 }
 
-func (m *MongodbDatabase) PopulateVersionIfEmpty(
+func (m *MongodbDatabase) PopulateDbData(
 	logger *slog.Logger,
 	encryptor encryption.FieldEncryptor,
 	databaseID uuid.UUID,
 ) error {
-	if m.Version != "" {
-		return nil
-	}
 	return m.PopulateVersion(logger, encryptor, databaseID)
 }
 
@@ -447,20 +444,20 @@ func (m *MongodbDatabase) buildConnectionURI(password string) string {
 		authDB = "admin"
 	}
 
-	tlsOption := "false"
+	tlsParams := ""
 	if m.IsHttps {
-		tlsOption = "true"
+		tlsParams = "&tls=true&tlsInsecure=true"
 	}
 
 	return fmt.Sprintf(
-		"mongodb://%s:%s@%s:%d/%s?authSource=%s&tls=%s&connectTimeoutMS=15000",
+		"mongodb://%s:%s@%s:%d/%s?authSource=%s&connectTimeoutMS=15000%s",
 		url.QueryEscape(m.Username),
 		url.QueryEscape(password),
 		m.Host,
 		m.Port,
 		m.Database,
 		authDB,
-		tlsOption,
+		tlsParams,
 	)
 }
 
@@ -471,19 +468,19 @@ func (m *MongodbDatabase) BuildMongodumpURI(password string) string {
 		authDB = "admin"
 	}
 
-	tlsOption := "false"
+	tlsParams := ""
 	if m.IsHttps {
-		tlsOption = "true"
+		tlsParams = "&tls=true&tlsInsecure=true"
 	}
 
 	return fmt.Sprintf(
-		"mongodb://%s:%s@%s:%d/?authSource=%s&tls=%s&connectTimeoutMS=15000",
+		"mongodb://%s:%s@%s:%d/?authSource=%s&connectTimeoutMS=15000%s",
 		url.QueryEscape(m.Username),
 		url.QueryEscape(password),
 		m.Host,
 		m.Port,
 		authDB,
-		tlsOption,
+		tlsParams,
 	)
 }
 

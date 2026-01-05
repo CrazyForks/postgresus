@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
+	"databasus-backend/internal/config"
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
@@ -679,7 +681,13 @@ func createTestDatabase(
 	token string,
 	router *gin.Engine,
 ) *databases.Database {
-	testDbName := "test_db"
+	env := config.GetEnv()
+	port, err := strconv.Atoi(env.TestPostgres16Port)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to parse TEST_POSTGRES_16_PORT: %v", err))
+	}
+
+	testDbName := "testdb"
 	request := databases.Database{
 		Name:        name,
 		WorkspaceID: &workspaceID,
@@ -687,9 +695,9 @@ func createTestDatabase(
 		Postgresql: &postgresql.PostgresqlDatabase{
 			Version:  tools.PostgresqlVersion16,
 			Host:     "localhost",
-			Port:     5432,
-			Username: "postgres",
-			Password: "postgres",
+			Port:     port,
+			Username: "testuser",
+			Password: "testpassword",
 			Database: &testDbName,
 			CpuCount: 1,
 		},

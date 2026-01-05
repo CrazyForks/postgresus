@@ -137,16 +137,13 @@ func (p *PostgresqlDatabase) EncryptSensitiveFields(
 	return nil
 }
 
-// PopulateVersionIfEmpty detects and sets the PostgreSQL version if not already set.
+// PopulateDbData detects and sets the PostgreSQL version.
 // This should be called before encrypting sensitive fields.
-func (p *PostgresqlDatabase) PopulateVersionIfEmpty(
+func (p *PostgresqlDatabase) PopulateDbData(
 	logger *slog.Logger,
 	encryptor encryption.FieldEncryptor,
 	databaseID uuid.UUID,
 ) error {
-	if p.Version != "" {
-		return nil
-	}
 	return p.PopulateVersion(logger, encryptor, databaseID)
 }
 

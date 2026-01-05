@@ -107,12 +107,14 @@ func (uc *CreateMariadbBackupUsecase) buildMariadbDumpArgs(
 		"--user=" + mdb.Username,
 		"--single-transaction",
 		"--routines",
-		"--triggers",
 		"--quick",
 		"--verbose",
 	}
 
-	if !mdb.IsExcludeEvents {
+	if mdb.HasPrivilege("TRIGGER") {
+		args = append(args, "--triggers")
+	}
+	if mdb.HasPrivilege("EVENT") {
 		args = append(args, "--events")
 	}
 

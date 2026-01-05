@@ -163,6 +163,10 @@ export const CreateDatabaseComponent = ({ workspaceId, onCreated, onClose }: Pro
   }
 
   if (step === 'notifiers') {
+    if (isCreating) {
+      return <div>Creating database...</div>;
+    }
+
     return (
       <EditDatabaseNotifiersComponent
         database={database}

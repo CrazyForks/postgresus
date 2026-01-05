@@ -104,21 +104,21 @@ func (d *Database) EncryptSensitiveFields(encryptor encryption.FieldEncryptor) e
 	return nil
 }
 
-func (d *Database) PopulateVersionIfEmpty(
+func (d *Database) PopulateDbData(
 	logger *slog.Logger,
 	encryptor encryption.FieldEncryptor,
 ) error {
 	if d.Postgresql != nil {
-		return d.Postgresql.PopulateVersionIfEmpty(logger, encryptor, d.ID)
+		return d.Postgresql.PopulateDbData(logger, encryptor, d.ID)
 	}
 	if d.Mysql != nil {
-		return d.Mysql.PopulateVersionIfEmpty(logger, encryptor, d.ID)
+		return d.Mysql.PopulateDbData(logger, encryptor, d.ID)
 	}
 	if d.Mariadb != nil {
-		return d.Mariadb.PopulateVersionIfEmpty(logger, encryptor, d.ID)
+		return d.Mariadb.PopulateDbData(logger, encryptor, d.ID)
 	}
 	if d.Mongodb != nil {
-		return d.Mongodb.PopulateVersionIfEmpty(logger, encryptor, d.ID)
+		return d.Mongodb.PopulateDbData(logger, encryptor, d.ID)
 	}
 	return nil
 }

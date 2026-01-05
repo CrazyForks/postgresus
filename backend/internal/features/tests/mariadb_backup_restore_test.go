@@ -149,101 +149,6 @@ func Test_BackupAndRestoreMariadb_WithReadOnlyUser_RestoreIsSuccessful(t *testin
 	}
 }
 
-func Test_BackupAndRestoreMariadb_WithExcludeEvents_RestoreIsSuccessful(t *testing.T) {
-	env := config.GetEnv()
-	container, err := connectToMariadbContainer(tools.MariadbVersion120, env.TestMariadb120Port)
-	if err != nil {
-		t.Skipf("Skipping MariaDB 12.0 IsExcludeEvents test: %v", err)
-		return
-	}
-	defer func() {
-		if container.DB != nil {
-			container.DB.Close()
-		}
-	}()
-
-	setupMariadbTestData(t, container.DB)
-
-	router := createTestRouter()
-	user := users_testing.CreateTestUser(users_enums.UserRoleMember)
-	workspace := workspaces_testing.CreateTestWorkspace(
-		"MariaDB ExcludeEvents Test Workspace",
-		user,
-		router,
-	)
-
-	storage := storages.CreateTestStorage(workspace.ID)
-
-	database := createMariadbDatabaseWithExcludeEventsViaAPI(
-		t, router, "MariaDB ExcludeEvents Test Database", workspace.ID,
-		container.Host, container.Port,
-		container.Username, container.Password, container.Database,
-		container.Version,
-		true,
-		user.Token,
-	)
-
-	enableBackupsViaAPI(
-		t, router, database.ID, storage.ID,
-		backups_config.BackupEncryptionNone, user.Token,
-	)
-
-	createBackupViaAPI(t, router, database.ID, user.Token)
-
-	backup := waitForBackupCompletion(t, router, database.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, backups.BackupStatusCompleted, backup.Status)
-
-	newDBName := "restoreddb_mariadb_excludeevents"
-	_, err = container.DB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s;", newDBName))
-	assert.NoError(t, err)
-
-	_, err = container.DB.Exec(fmt.Sprintf("CREATE DATABASE %s;", newDBName))
-	assert.NoError(t, err)
-
-	newDSN := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true",
-		container.Username, container.Password, container.Host, container.Port, newDBName)
-	newDB, err := sqlx.Connect("mysql", newDSN)
-	assert.NoError(t, err)
-	defer newDB.Close()
-
-	createMariadbRestoreViaAPI(
-		t, router, backup.ID,
-		container.Host, container.Port,
-		container.Username, container.Password, newDBName,
-		container.Version,
-		user.Token,
-	)
-
-	restore := waitForMariadbRestoreCompletion(t, router, backup.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, restores_enums.RestoreStatusCompleted, restore.Status)
-
-	var tableExists int
-	err = newDB.Get(
-		&tableExists,
-		"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = 'test_data'",
-		newDBName,
-	)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, tableExists, "Table 'test_data' should exist in restored database")
-
-	verifyMariadbDataIntegrity(t, container.DB, newDB)
-
-	err = os.Remove(filepath.Join(config.GetEnv().DataFolder, backup.ID.String()))
-	if err != nil {
-		t.Logf("Warning: Failed to delete backup file: %v", err)
-	}
-
-	test_utils.MakeDeleteRequest(
-		t,
-		router,
-		"/api/v1/databases/"+database.ID.String(),
-		"Bearer "+user.Token,
-		http.StatusNoContent,
-	)
-	storages.RemoveTestStorage(storage.ID)
-	workspaces_testing.RemoveTestWorkspace(workspace, router)
-}
-
 func testMariadbBackupRestoreForVersion(
 	t *testing.T,
 	mariadbVersion tools.MariadbVersion,
@@ -555,39 +460,17 @@ func createMariadbDatabaseViaAPI(
 	version tools.MariadbVersion,
 	token string,
 ) *databases.Database {
-	return createMariadbDatabaseWithExcludeEventsViaAPI(
-		t, router, name, workspaceID,
-		host, port, username, password, database,
-		version, false, token,
-	)
-}
-
-func createMariadbDatabaseWithExcludeEventsViaAPI(
-	t *testing.T,
-	router *gin.Engine,
-	name string,
-	workspaceID uuid.UUID,
-	host string,
-	port int,
-	username string,
-	password string,
-	database string,
-	version tools.MariadbVersion,
-	isExcludeEvents bool,
-	token string,
-) *databases.Database {
 	request := databases.Database{
 		Name:        name,
 		WorkspaceID: &workspaceID,
 		Type:        databases.DatabaseTypeMariadb,
 		Mariadb: &mariadbtypes.MariadbDatabase{
-			Host:            host,
-			Port:            port,
-			Username:        username,
-			Password:        password,
-			Database:        &database,
-			Version:         version,
-			IsExcludeEvents: isExcludeEvents,
+			Host:     host,
+			Port:     port,
+			Username: username,
+			Password: password,
+			Database: &database,
+			Version:  version,
 		},
 	}
 

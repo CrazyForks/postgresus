@@ -170,16 +170,14 @@ export const CreateReadOnlyComponent = ({
             <>
               Current user has the following write {privilegesLabel}:{' '}
               <span
-                className={
-                  shouldShowExpandToggle() ? 'cursor-pointer text-blue-600 dark:text-blue-400' : ''
-                }
+                className={shouldShowExpandToggle() ? 'cursor-pointer hover:opacity-80' : ''}
                 onClick={() =>
                   shouldShowExpandToggle() && setIsPrivilegesExpanded(!isPrivilegesExpanded)
                 }
               >
-                <b>{getPrivilegesDisplay()}</b>
+                {getPrivilegesDisplay()}
                 {shouldShowExpandToggle() && (
-                  <span className="ml-1 text-xs">
+                  <span className="ml-1 text-xs text-blue-600 hover:opacity-80">
                     ({isPrivilegesExpanded ? 'collapse' : 'expand'})
                   </span>
                 )}
