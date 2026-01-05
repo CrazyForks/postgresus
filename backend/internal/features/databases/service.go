@@ -594,17 +594,17 @@ func (s *DatabaseService) OnBeforeWorkspaceDeletion(workspaceID uuid.UUID) error
 func (s *DatabaseService) IsUserReadOnly(
 	user *users_models.User,
 	database *Database,
-) (bool, error) {
+) (bool, []string, error) {
 	var usingDatabase *Database
 
 	if database.ID != uuid.Nil {
 		existingDatabase, err := s.dbRepository.FindByID(database.ID)
 		if err != nil {
-			return false, err
+			return false, nil, err
 		}
 
 		if existingDatabase.WorkspaceID == nil {
-			return false, errors.New("cannot check user for database without workspace")
+			return false, nil, errors.New("cannot check user for database without workspace")
 		}
 
 		canAccess, _, err := s.workspaceService.CanUserAccessWorkspace(
@@ -612,20 +612,20 @@ func (s *DatabaseService) IsUserReadOnly(
 			user,
 		)
 		if err != nil {
-			return false, err
+			return false, nil, err
 		}
 		if !canAccess {
-			return false, errors.New("insufficient permissions to access this database")
+			return false, nil, errors.New("insufficient permissions to access this database")
 		}
 
 		if database.WorkspaceID != nil && *existingDatabase.WorkspaceID != *database.WorkspaceID {
-			return false, errors.New("database does not belong to this workspace")
+			return false, nil, errors.New("database does not belong to this workspace")
 		}
 
 		existingDatabase.Update(database)
 
 		if err := existingDatabase.Validate(); err != nil {
-			return false, err
+			return false, nil, err
 		}
 
 		usingDatabase = existingDatabase
@@ -633,10 +633,10 @@ func (s *DatabaseService) IsUserReadOnly(
 		if database.WorkspaceID != nil {
 			canAccess, _, err := s.workspaceService.CanUserAccessWorkspace(*database.WorkspaceID, user)
 			if err != nil {
-				return false, err
+				return false, nil, err
 			}
 			if !canAccess {
-				return false, errors.New("insufficient permissions to access this workspace")
+				return false, nil, errors.New("insufficient permissions to access this workspace")
 			}
 		}
 
@@ -676,7 +676,7 @@ func (s *DatabaseService) IsUserReadOnly(
 			usingDatabase.ID,
 		)
 	default:
-		return false, errors.New("read-only check not supported for this database type")
+		return false, nil, errors.New("read-only check not supported for this database type")
 	}
 }
 

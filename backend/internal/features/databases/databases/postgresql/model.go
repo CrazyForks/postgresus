@@ -192,29 +192,33 @@ func (p *PostgresqlDatabase) PopulateVersion(
 // IsUserReadOnly checks if the database user has read-only privileges.
 //
 // This method performs a comprehensive security check by examining:
-// - Role-level attributes (superuser, createrole, createdb)
+// - Role-level attributes (superuser, createrole, createdb, bypassrls, replication)
 // - Database-level privileges (CREATE, TEMP)
+// - Schema-level privileges (CREATE on any non-system schema)
 // - Table-level write permissions (INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER)
+// - Function-level privileges (EXECUTE on SECURITY DEFINER functions)
 //
 // A user is considered read-only only if they have ZERO write privileges
-// across all three levels. This ensures the database user follows the
+// across all levels. This ensures the database user follows the
 // principle of least privilege for backup operations.
+//
+// Returns: (isReadOnly, detectedPrivileges, error)
 func (p *PostgresqlDatabase) IsUserReadOnly(
 	ctx context.Context,
 	logger *slog.Logger,
 	encryptor encryption.FieldEncryptor,
 	databaseID uuid.UUID,
-) (bool, error) {
+) (bool, []string, error) {
 	password, err := decryptPasswordIfNeeded(p.Password, encryptor, databaseID)
 	if err != nil {
-		return false, fmt.Errorf("failed to decrypt password: %w", err)
+		return false, nil, fmt.Errorf("failed to decrypt password: %w", err)
 	}
 
 	connStr := buildConnectionStringForDB(p, *p.Database, password)
 
 	conn, err := pgx.Connect(ctx, connStr)
 	if err != nil {
-		return false, fmt.Errorf("failed to connect to database: %w", err)
+		return false, nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 	defer func() {
 		if closeErr := conn.Close(ctx); closeErr != nil {
@@ -222,22 +226,38 @@ func (p *PostgresqlDatabase) IsUserReadOnly(
 		}
 	}()
 
+	var privileges []string
+
 	// LEVEL 1: Check role-level attributes
-	var isSuperuser, canCreateRole, canCreateDB bool
+	var isSuperuser, canCreateRole, canCreateDB, canBypassRLS, canReplication bool
 	err = conn.QueryRow(ctx, `
 		SELECT
 			rolsuper,
 			rolcreaterole,
-			rolcreatedb
+			rolcreatedb,
+			rolbypassrls,
+			rolreplication
 		FROM pg_roles
 		WHERE rolname = current_user
-	`).Scan(&isSuperuser, &canCreateRole, &canCreateDB)
+	`).Scan(&isSuperuser, &canCreateRole, &canCreateDB, &canBypassRLS, &canReplication)
 	if err != nil {
-		return false, fmt.Errorf("failed to check role attributes: %w", err)
+		return false, nil, fmt.Errorf("failed to check role attributes: %w", err)
 	}
 
-	if isSuperuser || canCreateRole || canCreateDB {
-		return false, nil
+	if isSuperuser {
+		privileges = append(privileges, "SUPERUSER")
+	}
+	if canCreateRole {
+		privileges = append(privileges, "CREATEROLE")
+	}
+	if canCreateDB {
+		privileges = append(privileges, "CREATEDB")
+	}
+	if canBypassRLS {
+		privileges = append(privileges, "BYPASSRLS")
+	}
+	if canReplication {
+		privileges = append(privileges, "REPLICATION")
 	}
 
 	// LEVEL 2: Check database-level privileges
@@ -248,46 +268,34 @@ func (p *PostgresqlDatabase) IsUserReadOnly(
 			has_database_privilege(current_user, current_database(), 'TEMP') as can_temp
 	`).Scan(&canCreate, &canTemp)
 	if err != nil {
-		return false, fmt.Errorf("failed to check database privileges: %w", err)
+		return false, nil, fmt.Errorf("failed to check database privileges: %w", err)
 	}
 
-	if canCreate || canTemp {
-		return false, nil
+	if canCreate {
+		privileges = append(privileges, "CREATE (database)")
+	}
+	if canTemp {
+		privileges = append(privileges, "TEMP")
 	}
 
 	// LEVEL 2.5: Check schema-level CREATE privileges
-	schemaRows, err := conn.Query(ctx, `
-		SELECT DISTINCT nspname
-		FROM pg_namespace n
-		WHERE has_schema_privilege(current_user, n.nspname, 'CREATE')
-		AND nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
-	`)
+	var hasSchemaCreate bool
+	err = conn.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM pg_namespace n
+			WHERE has_schema_privilege(current_user, n.nspname, 'CREATE')
+			AND nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+		)
+	`).Scan(&hasSchemaCreate)
 	if err != nil {
-		return false, fmt.Errorf("failed to check schema privileges: %w", err)
+		return false, nil, fmt.Errorf("failed to check schema privileges: %w", err)
 	}
-	defer schemaRows.Close()
-
-	// If user has CREATE privilege on any schema, they're not read-only
-	if schemaRows.Next() {
-		return false, nil
-	}
-
-	if err := schemaRows.Err(); err != nil {
-		return false, fmt.Errorf("error iterating schema privileges: %w", err)
+	if hasSchemaCreate {
+		privileges = append(privileges, "CREATE (schema)")
 	}
 
 	// LEVEL 3: Check table-level write permissions
-	rows, err := conn.Query(ctx, `
-		SELECT DISTINCT privilege_type
-		FROM information_schema.role_table_grants
-		WHERE grantee = current_user
-		AND table_schema NOT IN ('pg_catalog', 'information_schema')
-	`)
-	if err != nil {
-		return false, fmt.Errorf("failed to check table privileges: %w", err)
-	}
-	defer rows.Close()
-
 	writePrivileges := map[string]bool{
 		"INSERT":     true,
 		"UPDATE":     true,
@@ -297,22 +305,56 @@ func (p *PostgresqlDatabase) IsUserReadOnly(
 		"TRIGGER":    true,
 	}
 
+	var tablePrivileges []string
+	rows, err := conn.Query(ctx, `
+		SELECT DISTINCT privilege_type
+		FROM information_schema.role_table_grants
+		WHERE grantee = current_user
+		AND table_schema NOT IN ('pg_catalog', 'information_schema')
+	`)
+	if err != nil {
+		return false, nil, fmt.Errorf("failed to check table privileges: %w", err)
+	}
+
 	for rows.Next() {
 		var privilege string
 		if err := rows.Scan(&privilege); err != nil {
-			return false, fmt.Errorf("failed to scan privilege: %w", err)
+			rows.Close()
+			return false, nil, fmt.Errorf("failed to scan privilege: %w", err)
 		}
-
-		if writePrivileges[privilege] {
-			return false, nil
-		}
+		tablePrivileges = append(tablePrivileges, privilege)
 	}
+	rows.Close()
 
 	if err := rows.Err(); err != nil {
-		return false, fmt.Errorf("error iterating privileges: %w", err)
+		return false, nil, fmt.Errorf("error iterating privileges: %w", err)
 	}
 
-	return true, nil
+	for _, privilege := range tablePrivileges {
+		if writePrivileges[privilege] {
+			privileges = append(privileges, privilege)
+		}
+	}
+
+	// LEVEL 4: Check for EXECUTE privilege on functions that are SECURITY DEFINER
+	var funcCount int
+	err = conn.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM pg_proc p
+		JOIN pg_namespace n ON p.pronamespace = n.oid
+		WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+		AND p.prosecdef = true
+		AND has_function_privilege(current_user, p.oid, 'EXECUTE')
+	`).Scan(&funcCount)
+	if err != nil {
+		return false, nil, fmt.Errorf("failed to check function privileges: %w", err)
+	}
+	if funcCount > 0 {
+		privileges = append(privileges, "EXECUTE (SECURITY DEFINER)")
+	}
+
+	isReadOnly := len(privileges) == 0
+	return isReadOnly, privileges, nil
 }
 
 // CreateReadOnlyUser creates a new PostgreSQL user with read-only privileges.
@@ -631,13 +673,9 @@ func testSingleDatabaseConnection(
 	}
 	postgresDb.Version = detectedVersion
 
-	// Test if we can perform basic operations (like pg_dump would need)
-	if err := testBasicOperations(ctx, conn, *postgresDb.Database); err != nil {
-		return fmt.Errorf(
-			"basic operations test failed for database '%s': %w",
-			*postgresDb.Database,
-			err,
-		)
+	// Verify user has sufficient permissions for backup operations
+	if err := checkBackupPermissions(ctx, conn, *postgresDb.Database); err != nil {
+		return err
 	}
 
 	return nil
@@ -670,18 +708,73 @@ func detectDatabaseVersion(ctx context.Context, conn *pgx.Conn) (tools.Postgresq
 	}
 }
 
-// testBasicOperations tests basic operations that backup tools need
-func testBasicOperations(ctx context.Context, conn *pgx.Conn, dbName string) error {
-	var hasCreatePriv bool
+// checkBackupPermissions verifies the user has sufficient privileges for pg_dump backup.
+// Required privileges: CONNECT on database, USAGE on schemas, SELECT on tables.
+func checkBackupPermissions(ctx context.Context, conn *pgx.Conn, dbName string) error {
+	var missingPrivileges []string
 
+	// Check CONNECT privilege on database
+	var hasConnect bool
 	err := conn.QueryRow(ctx, "SELECT has_database_privilege(current_user, current_database(), 'CONNECT')").
-		Scan(&hasCreatePriv)
+		Scan(&hasConnect)
 	if err != nil {
 		return fmt.Errorf("cannot check database privileges: %w", err)
 	}
+	if !hasConnect {
+		missingPrivileges = append(missingPrivileges, "CONNECT on database")
+	}
 
-	if !hasCreatePriv {
-		return fmt.Errorf("user does not have CONNECT privilege on database '%s'", dbName)
+	// Check USAGE privilege on at least one non-system schema
+	var schemaCount int
+	err = conn.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM pg_namespace n
+		WHERE has_schema_privilege(current_user, n.nspname, 'USAGE')
+		AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+		AND n.nspname NOT LIKE 'pg_temp_%'
+		AND n.nspname NOT LIKE 'pg_toast_temp_%'
+	`).Scan(&schemaCount)
+	if err != nil {
+		return fmt.Errorf("cannot check schema privileges: %w", err)
+	}
+	if schemaCount == 0 {
+		missingPrivileges = append(missingPrivileges, "USAGE on at least one schema")
+	}
+
+	// Check SELECT privilege on at least one table (if tables exist)
+	// Use pg_tables from pg_catalog which shows all tables regardless of user privileges
+	var tableCount int
+	err = conn.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM pg_catalog.pg_tables t
+		WHERE t.schemaname NOT IN ('pg_catalog', 'information_schema')
+	`).Scan(&tableCount)
+	if err != nil {
+		return fmt.Errorf("cannot check table count: %w", err)
+	}
+
+	if tableCount > 0 {
+		// Check if user has SELECT on at least one of these tables
+		var selectableTableCount int
+		err = conn.QueryRow(ctx, `
+			SELECT COUNT(*)
+			FROM pg_catalog.pg_tables t
+			WHERE t.schemaname NOT IN ('pg_catalog', 'information_schema')
+			AND has_table_privilege(current_user, quote_ident(t.schemaname) || '.' || quote_ident(t.tablename), 'SELECT')
+		`).Scan(&selectableTableCount)
+		if err != nil {
+			return fmt.Errorf("cannot check SELECT privileges: %w", err)
+		}
+		if selectableTableCount == 0 {
+			missingPrivileges = append(missingPrivileges, "SELECT on tables")
+		}
+	}
+
+	if len(missingPrivileges) > 0 {
+		return fmt.Errorf(
+			"insufficient permissions for backup. Missing: %s. Required: CONNECT on database, USAGE on schemas, SELECT on tables",
+			strings.Join(missingPrivileges, ", "),
+		)
 	}
 
 	return nil

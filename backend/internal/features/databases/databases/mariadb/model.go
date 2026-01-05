@@ -97,6 +97,10 @@ func (m *MariadbDatabase) TestConnection(
 	}
 	m.Version = detectedVersion
 
+	if err := checkBackupPermissions(ctx, db, *m.Database); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -189,17 +193,17 @@ func (m *MariadbDatabase) IsUserReadOnly(
 	logger *slog.Logger,
 	encryptor encryption.FieldEncryptor,
 	databaseID uuid.UUID,
-) (bool, error) {
+) (bool, []string, error) {
 	password, err := decryptPasswordIfNeeded(m.Password, encryptor, databaseID)
 	if err != nil {
-		return false, fmt.Errorf("failed to decrypt password: %w", err)
+		return false, nil, fmt.Errorf("failed to decrypt password: %w", err)
 	}
 
 	dsn := m.buildDSN(password, *m.Database)
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return false, fmt.Errorf("failed to connect to database: %w", err)
+		return false, nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 	defer func() {
 		if closeErr := db.Close(); closeErr != nil {
@@ -209,33 +213,44 @@ func (m *MariadbDatabase) IsUserReadOnly(
 
 	rows, err := db.QueryContext(ctx, "SHOW GRANTS FOR CURRENT_USER()")
 	if err != nil {
-		return false, fmt.Errorf("failed to check grants: %w", err)
+		return false, nil, fmt.Errorf("failed to check grants: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
 	writePrivileges := []string{
 		"INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER",
 		"INDEX", "GRANT OPTION", "ALL PRIVILEGES", "SUPER",
+		"EXECUTE", "FILE", "RELOAD", "SHUTDOWN", "CREATE ROUTINE",
+		"ALTER ROUTINE", "CREATE USER",
+		"CREATE TABLESPACE", "DELETE HISTORY", "REFERENCES",
 	}
+
+	detectedPrivileges := make(map[string]bool)
 
 	for rows.Next() {
 		var grant string
 		if err := rows.Scan(&grant); err != nil {
-			return false, fmt.Errorf("failed to scan grant: %w", err)
+			return false, nil, fmt.Errorf("failed to scan grant: %w", err)
 		}
 
 		for _, priv := range writePrivileges {
 			if regexp.MustCompile(`(?i)\b` + priv + `\b`).MatchString(grant) {
-				return false, nil
+				detectedPrivileges[priv] = true
 			}
 		}
 	}
 
 	if err := rows.Err(); err != nil {
-		return false, fmt.Errorf("error iterating grants: %w", err)
+		return false, nil, fmt.Errorf("error iterating grants: %w", err)
 	}
 
-	return true, nil
+	privileges := make([]string, 0, len(detectedPrivileges))
+	for priv := range detectedPrivileges {
+		privileges = append(privileges, priv)
+	}
+
+	isReadOnly := len(privileges) == 0
+	return isReadOnly, privileges, nil
 }
 
 func (m *MariadbDatabase) CreateReadOnlyUser(
@@ -422,6 +437,85 @@ func mapMariadb11xVersion(minor string) (tools.MariadbVersion, error) {
 	default:
 		return tools.MariadbVersion118, nil
 	}
+}
+
+// checkBackupPermissions verifies the user has sufficient privileges for mariadb-dump backup.
+// Required privileges: SELECT, SHOW VIEW, LOCK TABLES, TRIGGER, EVENT on database; PROCESS globally.
+func checkBackupPermissions(ctx context.Context, db *sql.DB, database string) error {
+	rows, err := db.QueryContext(ctx, "SHOW GRANTS FOR CURRENT_USER()")
+	if err != nil {
+		return fmt.Errorf("failed to check grants: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	requiredDBPrivileges := map[string]bool{
+		"SELECT":      false,
+		"SHOW VIEW":   false,
+		"LOCK TABLES": false,
+		"TRIGGER":     false,
+		"EVENT":       false,
+	}
+	hasProcess := false
+	hasAllPrivileges := false
+
+	escapedDB := strings.ReplaceAll(database, "_", "\\_")
+	dbPattern := regexp.MustCompile(
+		fmt.Sprintf("(?i)ON\\s+[`'\"]?(%s|\\*)[`'\"]?\\.\\*", regexp.QuoteMeta(escapedDB)),
+	)
+	globalPattern := regexp.MustCompile(`(?i)ON\s+\*\.\*`)
+
+	for rows.Next() {
+		var grant string
+		if err := rows.Scan(&grant); err != nil {
+			return fmt.Errorf("failed to scan grant: %w", err)
+		}
+
+		if regexp.MustCompile(`(?i)\bALL\s+PRIVILEGES\b`).MatchString(grant) {
+			if globalPattern.MatchString(grant) || dbPattern.MatchString(grant) {
+				hasAllPrivileges = true
+			}
+		}
+
+		if globalPattern.MatchString(grant) || dbPattern.MatchString(grant) {
+			for priv := range requiredDBPrivileges {
+				if regexp.MustCompile(`(?i)\b` + priv + `\b`).MatchString(grant) {
+					requiredDBPrivileges[priv] = true
+				}
+			}
+		}
+
+		if globalPattern.MatchString(grant) &&
+			regexp.MustCompile(`(?i)\bPROCESS\b`).MatchString(grant) {
+			hasProcess = true
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error iterating grants: %w", err)
+	}
+
+	if hasAllPrivileges {
+		return nil
+	}
+
+	var missingPrivileges []string
+	for priv, has := range requiredDBPrivileges {
+		if !has {
+			missingPrivileges = append(missingPrivileges, priv)
+		}
+	}
+	if !hasProcess {
+		missingPrivileges = append(missingPrivileges, "PROCESS (global)")
+	}
+
+	if len(missingPrivileges) > 0 {
+		return fmt.Errorf(
+			"insufficient permissions for backup. Missing: %s. Required: SELECT, SHOW VIEW, LOCK TABLES, TRIGGER, EVENT on database; PROCESS globally",
+			strings.Join(missingPrivileges, ", "),
+		)
+	}
+
+	return nil
 }
 
 func decryptPasswordIfNeeded(
