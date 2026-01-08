@@ -1,4 +1,6 @@
-import { Button, Checkbox, Input } from 'antd';
+import { DownOutlined, InfoCircleOutlined, UpOutlined } from '@ant-design/icons';
+import { Button, Checkbox, Input, Tooltip } from 'antd';
+import { useState } from 'react';
 
 import { GOOGLE_DRIVE_OAUTH_REDIRECT_URL } from '../../../../../constants';
 import type { Storage } from '../../../../../entity/storages';
@@ -11,6 +13,8 @@ interface Props {
 }
 
 export function EditGoogleDriveStorageComponent({ storage, setStorage, setUnsaved }: Props) {
+  const hasAdvancedValues = !!storage?.googleDriveStorage?.useLocalRedirect;
+  const [showAdvanced, setShowAdvanced] = useState(hasAdvancedValues);
   const goToAuthUrl = () => {
     if (!storage?.googleDriveStorage?.clientId || !storage?.googleDriveStorage?.clientSecret) {
       return;
@@ -95,27 +99,52 @@ export function EditGoogleDriveStorageComponent({ storage, setStorage, setUnsave
         />
       </div>
 
-      <div className="mb-4 flex w-full flex-col items-start sm:flex-row sm:items-center">
-        <div className="mb-1 min-w-[110px] sm:mb-0" />
-        <Checkbox
-          checked={storage?.googleDriveStorage?.useLocalRedirect || false}
-          onChange={(e) => {
-            if (!storage?.googleDriveStorage) return;
-
-            setStorage({
-              ...storage,
-              googleDriveStorage: {
-                ...storage.googleDriveStorage,
-                useLocalRedirect: e.target.checked,
-              },
-            });
-            setUnsaved();
-          }}
-          disabled={!!storage?.googleDriveStorage?.tokenJson}
+      <div className="mt-4 mb-3 flex items-center">
+        <div
+          className="flex cursor-pointer items-center text-sm text-blue-600 hover:text-blue-800"
+          onClick={() => setShowAdvanced(!showAdvanced)}
         >
-          <span className="text-xs">Use local redirect (more secure)</span>
-        </Checkbox>
+          <span className="mr-2">Advanced settings</span>
+
+          {showAdvanced ? (
+            <UpOutlined style={{ fontSize: '12px' }} />
+          ) : (
+            <DownOutlined style={{ fontSize: '12px' }} />
+          )}
+        </div>
       </div>
+
+      {showAdvanced && (
+        <div className="mb-4 flex w-full flex-col items-start sm:flex-row sm:items-center">
+          <div className="flex items-center">
+            <Checkbox
+              checked={storage?.googleDriveStorage?.useLocalRedirect || false}
+              onChange={(e) => {
+                if (!storage?.googleDriveStorage) return;
+
+                setStorage({
+                  ...storage,
+                  googleDriveStorage: {
+                    ...storage.googleDriveStorage,
+                    useLocalRedirect: e.target.checked,
+                  },
+                });
+                setUnsaved();
+              }}
+              disabled={!!storage?.googleDriveStorage?.tokenJson}
+            >
+              <span>Use local redirect</span>
+            </Checkbox>
+
+            <Tooltip
+              className="cursor-pointer"
+              title="When enabled, uses your address as the origin and redirect URL (specify it in Google Cloud Console). HTTPS is required."
+            >
+              <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
+            </Tooltip>
+          </div>
+        </div>
+      )}
 
       {storage?.googleDriveStorage?.tokenJson && (
         <>
