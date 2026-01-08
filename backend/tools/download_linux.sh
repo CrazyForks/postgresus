@@ -9,13 +9,13 @@ echo "Installing PostgreSQL, MySQL, MariaDB and MongoDB client tools for Linux (
 echo
 
 # Check if running on supported system
-if ! command -v apt-get > /dev/null 2>&1; then
+if ! command -v apt-get &> /dev/null; then
     echo "Error: This script requires apt-get (Debian/Ubuntu-like system)"
     exit 1
 fi
 
 # Check if running as root or with sudo
-if [ $EUID -eq 0 ]; then
+if [[ $EUID -eq 0 ]]; then
     SUDO=""
 else
     SUDO="sudo"
@@ -107,12 +107,6 @@ for version in $mysql_versions; do
     version_dir="$MYSQL_DIR/mysql-$version"
     mkdir -p "$version_dir/bin"
     
-    # Skip if already exists
-    if [ -f "$version_dir/bin/mysqldump" ]; then
-        echo "  MySQL $version already installed, skipping..."
-        continue
-    fi
-    
     # Download MySQL client tools from official CDN
     # Note: 5.7 is in Downloads, 8.0, 8.4 specific versions are in archives, 9.5 is in MySQL-9.5
     case $version in
@@ -138,14 +132,11 @@ for version in $mysql_versions; do
     wget -q "$MYSQL_URL" -O "mysql-$version.tar.gz" || wget -q "$MYSQL_URL" -O "mysql-$version.tar.xz"
     
     echo "  Extracting MySQL $version..."
-    case "$MYSQL_URL" in
-        *.xz)
-            tar -xJf "mysql-$version.tar.xz" 2>/dev/null || tar -xJf "mysql-$version.tar.gz" 2>/dev/null
-            ;;
-        *)
-            tar -xzf "mysql-$version.tar.gz" 2>/dev/null || tar -xzf "mysql-$version.tar.xz" 2>/dev/null
-            ;;
-    esac
+    if [[ "$MYSQL_URL" == *.xz ]]; then
+        tar -xJf "mysql-$version.tar.xz" 2>/dev/null || tar -xJf "mysql-$version.tar.gz" 2>/dev/null
+    else
+        tar -xzf "mysql-$version.tar.gz" 2>/dev/null || tar -xzf "mysql-$version.tar.xz" 2>/dev/null
+    fi
     
     # Find extracted directory
     EXTRACTED_DIR=$(ls -d mysql-*/ 2>/dev/null | head -1)
@@ -184,7 +175,12 @@ echo "Installing MariaDB client tools to: $MARIADB_DIR"
 # Install dependencies
 $SUDO apt-get install -y -qq apt-transport-https curl
 
-# MariaDB versions to install
+# MariaDB versions to install with their URLs
+declare -A MARIADB_URLS=(
+    ["10.6"]="https://archive.mariadb.org/mariadb-10.6.21/bintar-linux-systemd-x86_64/mariadb-10.6.21-linux-systemd-x86_64.tar.gz"
+    ["12.1"]="https://archive.mariadb.org/mariadb-12.1.2/bintar-linux-systemd-x86_64/mariadb-12.1.2-linux-systemd-x86_64.tar.gz"
+)
+
 mariadb_versions="10.6 12.1"
 
 for version in $mariadb_versions; do
@@ -199,19 +195,7 @@ for version in $mariadb_versions; do
         continue
     fi
     
-    # Get URL based on version
-    case "$version" in
-        "10.6")
-            url="https://archive.mariadb.org/mariadb-10.6.21/bintar-linux-systemd-x86_64/mariadb-10.6.21-linux-systemd-x86_64.tar.gz"
-            ;;
-        "12.1")
-            url="https://archive.mariadb.org/mariadb-12.1.2/bintar-linux-systemd-x86_64/mariadb-12.1.2-linux-systemd-x86_64.tar.gz"
-            ;;
-        *)
-            echo "  Warning: Unknown MariaDB version $version"
-            continue
-            ;;
-    esac
+    url=${MARIADB_URLS[$version]}
     
     TEMP_DIR="/tmp/mariadb_install_$version"
     mkdir -p "$TEMP_DIR"
@@ -254,48 +238,43 @@ mkdir -p "$MONGODB_DIR/bin"
 
 echo "Installing MongoDB Database Tools to: $MONGODB_DIR"
 
-# Skip if already installed
-if [ -f "$MONGODB_DIR/bin/mongodump" ] && [ -L "$MONGODB_DIR/bin/mongodump" ]; then
-    echo "MongoDB Database Tools already installed, skipping..."
+# MongoDB Database Tools are backward compatible - single version supports all servers (4.0-8.0)
+# Detect architecture
+ARCH=$(uname -m)
+if [ "$ARCH" = "x86_64" ]; then
+    MONGODB_TOOLS_URL="https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian12-x86_64-100.10.0.deb"
+elif [ "$ARCH" = "aarch64" ]; then
+    MONGODB_TOOLS_URL="https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian12-aarch64-100.10.0.deb"
 else
-    # MongoDB Database Tools are backward compatible - single version supports all servers (4.0-8.0)
-    # Detect architecture
-    ARCH=$(uname -m)
-    if [ "$ARCH" = "x86_64" ]; then
-        MONGODB_TOOLS_URL="https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian12-x86_64-100.10.0.deb"
-    elif [ "$ARCH" = "aarch64" ]; then
-        MONGODB_TOOLS_URL="https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian12-aarch64-100.10.0.deb"
-    else
-        echo "Warning: Unsupported architecture $ARCH for MongoDB Database Tools"
-        MONGODB_TOOLS_URL=""
+    echo "Warning: Unsupported architecture $ARCH for MongoDB Database Tools"
+    MONGODB_TOOLS_URL=""
+fi
+
+if [ -n "$MONGODB_TOOLS_URL" ]; then
+    TEMP_DIR="/tmp/mongodb_install"
+    mkdir -p "$TEMP_DIR"
+    cd "$TEMP_DIR"
+
+    echo "Downloading MongoDB Database Tools..."
+    wget -q "$MONGODB_TOOLS_URL" -O mongodb-database-tools.deb || {
+        echo "Warning: Could not download MongoDB Database Tools"
+        cd - >/dev/null
+        rm -rf "$TEMP_DIR"
+    }
+
+    if [ -f "mongodb-database-tools.deb" ]; then
+        echo "Installing MongoDB Database Tools..."
+        $SUDO dpkg -i mongodb-database-tools.deb 2>/dev/null || $SUDO apt-get install -f -y -qq
+
+        # Create symlinks to tools directory
+        ln -sf /usr/bin/mongodump "$MONGODB_DIR/bin/mongodump"
+        ln -sf /usr/bin/mongorestore "$MONGODB_DIR/bin/mongorestore"
+
+        echo "MongoDB Database Tools installed successfully"
     fi
 
-    if [ -n "$MONGODB_TOOLS_URL" ]; then
-        TEMP_DIR="/tmp/mongodb_install"
-        mkdir -p "$TEMP_DIR"
-        cd "$TEMP_DIR"
-
-        echo "Downloading MongoDB Database Tools..."
-        if ! wget -q "$MONGODB_TOOLS_URL" -O mongodb-database-tools.deb; then
-            echo "Warning: Could not download MongoDB Database Tools"
-            cd - >/dev/null
-            rm -rf "$TEMP_DIR"
-        else
-            if [ -f "mongodb-database-tools.deb" ]; then
-                echo "Installing MongoDB Database Tools..."
-                $SUDO dpkg -i mongodb-database-tools.deb 2>/dev/null || $SUDO apt-get install -f -y -qq
-
-                # Create symlinks to tools directory
-                ln -sf /usr/bin/mongodump "$MONGODB_DIR/bin/mongodump"
-                ln -sf /usr/bin/mongorestore "$MONGODB_DIR/bin/mongorestore"
-
-                echo "MongoDB Database Tools installed successfully"
-            fi
-
-            cd - >/dev/null
-            rm -rf "$TEMP_DIR"
-        fi
-    fi
+    cd - >/dev/null
+    rm -rf "$TEMP_DIR"
 fi
 
 echo

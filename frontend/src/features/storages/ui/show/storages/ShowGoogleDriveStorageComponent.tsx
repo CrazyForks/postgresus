@@ -20,6 +20,11 @@ export function ShowGoogleDriveStorageComponent({ storage }: Props) {
       </div>
 
       <div className="mb-1 flex items-center">
+        <div className="min-w-[110px]">Use local redirect</div>
+        {`*************`}
+      </div>
+
+      <div className="mb-1 flex items-center">
         <div className="min-w-[110px]">User Token</div>
         {`*************`}
       </div>

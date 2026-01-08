@@ -1,4 +1,4 @@
-import { Button, Input } from 'antd';
+import { Button, Checkbox, Input } from 'antd';
 
 import { GOOGLE_DRIVE_OAUTH_REDIRECT_URL } from '../../../../../constants';
 import type { Storage } from '../../../../../entity/storages';
@@ -16,7 +16,10 @@ export function EditGoogleDriveStorageComponent({ storage, setStorage, setUnsave
       return;
     }
 
-    const redirectUri = GOOGLE_DRIVE_OAUTH_REDIRECT_URL;
+    const localRedirectUri = `${window.location.origin}/storages/google-oauth`;
+    const useLocal = storage.googleDriveStorage.useLocalRedirect;
+    const redirectUri = useLocal ? localRedirectUri : GOOGLE_DRIVE_OAUTH_REDIRECT_URL;
+
     const clientId = storage.googleDriveStorage.clientId;
     const scope = 'https://www.googleapis.com/auth/drive.file';
     const originUrl = `${window.location.origin}/storages/google-oauth`;
@@ -90,6 +93,28 @@ export function EditGoogleDriveStorageComponent({ storage, setStorage, setUnsave
           placeholder="my-client-secret"
           disabled={!!storage?.googleDriveStorage?.tokenJson}
         />
+      </div>
+
+      <div className="mb-4 flex w-full flex-col items-start sm:flex-row sm:items-center">
+        <div className="mb-1 min-w-[110px] sm:mb-0" />
+        <Checkbox
+          checked={storage?.googleDriveStorage?.useLocalRedirect || false}
+          onChange={(e) => {
+            if (!storage?.googleDriveStorage) return;
+
+            setStorage({
+              ...storage,
+              googleDriveStorage: {
+                ...storage.googleDriveStorage,
+                useLocalRedirect: e.target.checked,
+              },
+            });
+            setUnsaved();
+          }}
+          disabled={!!storage?.googleDriveStorage?.tokenJson}
+        >
+          <span className="text-xs">Use local redirect (more secure)</span>
+        </Checkbox>
       </div>
 
       {storage?.googleDriveStorage?.tokenJson && (
