@@ -151,7 +151,13 @@ func Test_CreateDatabase_PermissionsEnforced(t *testing.T) {
 				testUserToken = owner.Token
 			} else if tt.workspaceRole != nil {
 				member := users_testing.CreateTestUser(users_enums.UserRoleMember)
-				workspaces_testing.AddMemberToWorkspace(workspace, member, *tt.workspaceRole, owner.Token, router)
+				workspaces_testing.AddMemberToWorkspace(
+					workspace,
+					member,
+					*tt.workspaceRole,
+					owner.Token,
+					router,
+				)
 				testUserToken = member.Token
 			}
 
@@ -263,7 +269,13 @@ func Test_UpdateDatabase_PermissionsEnforced(t *testing.T) {
 				testUserToken = owner.Token
 			} else if tt.workspaceRole != nil {
 				member := users_testing.CreateTestUser(users_enums.UserRoleMember)
-				workspaces_testing.AddMemberToWorkspace(workspace, member, *tt.workspaceRole, owner.Token, router)
+				workspaces_testing.AddMemberToWorkspace(
+					workspace,
+					member,
+					*tt.workspaceRole,
+					owner.Token,
+					router,
+				)
 				testUserToken = member.Token
 			}
 
@@ -365,7 +377,13 @@ func Test_DeleteDatabase_PermissionsEnforced(t *testing.T) {
 				testUserToken = owner.Token
 			} else if tt.workspaceRole != nil {
 				member := users_testing.CreateTestUser(users_enums.UserRoleMember)
-				workspaces_testing.AddMemberToWorkspace(workspace, member, *tt.workspaceRole, owner.Token, router)
+				workspaces_testing.AddMemberToWorkspace(
+					workspace,
+					member,
+					*tt.workspaceRole,
+					owner.Token,
+					router,
+				)
 				testUserToken = member.Token
 			}
 
@@ -430,7 +448,13 @@ func Test_GetDatabase_PermissionsEnforced(t *testing.T) {
 				testUser = admin.Token
 			} else if tt.userRole != nil {
 				member := users_testing.CreateTestUser(users_enums.UserRoleMember)
-				workspaces_testing.AddMemberToWorkspace(workspace, member, *tt.userRole, owner.Token, router)
+				workspaces_testing.AddMemberToWorkspace(
+					workspace,
+					member,
+					*tt.userRole,
+					owner.Token,
+					router,
+				)
 				testUser = member.Token
 			} else {
 				nonMember := users_testing.CreateTestUser(users_enums.UserRoleMember)
@@ -654,7 +678,13 @@ func Test_CopyDatabase_PermissionsEnforced(t *testing.T) {
 				testUserToken = owner.Token
 			} else if tt.workspaceRole != nil {
 				member := users_testing.CreateTestUser(users_enums.UserRoleMember)
-				workspaces_testing.AddMemberToWorkspace(workspace, member, *tt.workspaceRole, owner.Token, router)
+				workspaces_testing.AddMemberToWorkspace(
+					workspace,
+					member,
+					*tt.workspaceRole,
+					owner.Token,
+					router,
+				)
 				testUserToken = member.Token
 			}
 

@@ -1071,8 +1071,20 @@ func Test_TransferStorage_PermissionsEnforced(t *testing.T) {
 				testUserToken = admin.Token
 			} else if tt.sourceRole != nil {
 				testUser := users_testing.CreateTestUser(users_enums.UserRoleMember)
-				workspaces_testing.AddMemberToWorkspace(sourceWorkspace, testUser, *tt.sourceRole, sourceOwner.Token, router)
-				workspaces_testing.AddMemberToWorkspace(targetWorkspace, testUser, *tt.targetRole, targetOwner.Token, router)
+				workspaces_testing.AddMemberToWorkspace(
+					sourceWorkspace,
+					testUser,
+					*tt.sourceRole,
+					sourceOwner.Token,
+					router,
+				)
+				workspaces_testing.AddMemberToWorkspace(
+					targetWorkspace,
+					testUser,
+					*tt.targetRole,
+					targetOwner.Token,
+					router,
+				)
 				testUserToken = testUser.Token
 			}
 

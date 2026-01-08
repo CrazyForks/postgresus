@@ -18,6 +18,8 @@ export function OauthStorageComponent() {
     const { clientId, clientSecret } = oauthDto.storage.googleDriveStorage;
     const { authCode } = oauthDto;
 
+    const redirectUri = oauthDto.redirectUrl || GOOGLE_DRIVE_OAUTH_REDIRECT_URL;
+
     try {
       // Exchange authorization code for access token
       const response = await fetch('https://oauth2.googleapis.com/token', {
@@ -29,13 +31,16 @@ export function OauthStorageComponent() {
           code: authCode,
           client_id: clientId,
           client_secret: clientSecret,
-          redirect_uri: GOOGLE_DRIVE_OAUTH_REDIRECT_URL,
+          redirect_uri: redirectUri,
           grant_type: 'authorization_code',
         }),
       });
 
       if (!response.ok) {
-        throw new Error(`OAuth exchange failed: ${response.statusText}`);
+        const errorData = await response.json();
+        throw new Error(
+          errorData.error_description || `OAuth exchange failed: ${response.statusText}`,
+        );
       }
 
       const tokenData = await response.json();
@@ -44,27 +49,71 @@ export function OauthStorageComponent() {
       setStorage(oauthDto.storage);
     } catch (error) {
       alert(`Failed to exchange OAuth code: ${error}`);
+      // Return to home if exchange fails
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 3000);
     }
   };
 
-  useEffect(() => {
-    const oauthDtoParam = new URLSearchParams(window.location.search).get('oauthDto');
-    if (!oauthDtoParam) {
-      alert('OAuth param not found');
-      return;
-    }
-
-    const decodedParam = decodeURIComponent(oauthDtoParam);
-    const oauthDto: StorageOauthDto = JSON.parse(decodedParam);
-
+  /**
+   * Helper to validate the DTO and start the exchange process
+   */
+  const processOauthDto = (oauthDto: StorageOauthDto) => {
     if (oauthDto.storage.type === StorageType.GOOGLE_DRIVE) {
       if (!oauthDto.storage.googleDriveStorage) {
-        alert('Google Drive storage not found');
+        alert('Google Drive storage configuration not found in DTO');
         return;
       }
 
       exchangeGoogleOauthCode(oauthDto);
+    } else {
+      alert('Unsupported storage type for OAuth');
     }
+  };
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+
+    // Attempt 1: Check for the 'oauthDto' param (Third-party/Legacy way)
+    const oauthDtoParam = urlParams.get('oauthDto');
+    if (oauthDtoParam) {
+      try {
+        const decodedParam = decodeURIComponent(oauthDtoParam);
+        const oauthDto: StorageOauthDto = JSON.parse(decodedParam);
+        processOauthDto(oauthDto);
+        return;
+      } catch (e) {
+        console.error('Error parsing oauthDto parameter:', e);
+        alert('Malformed OAuth parameter received');
+        return;
+      }
+    }
+
+    // Attempt 2: Check for 'code' and 'state' (Direct Google/Local way)
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+
+    if (code && state) {
+      try {
+        // The 'state' parameter contains our stringified StorageOauthDto
+        const decodedState = decodeURIComponent(state);
+        const oauthDto: StorageOauthDto = JSON.parse(decodedState);
+
+        // Inject the authorization code received from Google
+        oauthDto.authCode = code;
+
+        processOauthDto(oauthDto);
+        return;
+      } catch (e) {
+        console.error('Error parsing OAuth state:', e);
+        alert('OAuth state parameter is invalid');
+        return;
+      }
+    }
+
+    // Attempt 3: No valid parameters found
+    alert('OAuth param not found. Ensure the redirect URL is configured correctly.');
   }, []);
 
   if (!storage) {

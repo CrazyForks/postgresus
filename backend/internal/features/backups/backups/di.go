@@ -4,6 +4,7 @@ import (
 	"time"
 
 	audit_logs "databasus-backend/internal/features/audit_logs"
+	"databasus-backend/internal/features/backups/backups/download_token"
 	"databasus-backend/internal/features/backups/backups/usecases"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
@@ -34,6 +35,7 @@ var backupService = &BackupService{
 	workspaces_services.GetWorkspaceService(),
 	audit_logs.GetAuditLogService(),
 	backupContextManager,
+	download_token.GetDownloadTokenService(),
 }
 
 var backupBackgroundService = &BackupBackgroundService{
@@ -68,4 +70,8 @@ func GetBackupController() *BackupController {
 
 func GetBackupBackgroundService() *BackupBackgroundService {
 	return backupBackgroundService
+}
+
+func GetDownloadTokenBackgroundService() *download_token.DownloadTokenBackgroundService {
+	return download_token.GetDownloadTokenBackgroundService()
 }

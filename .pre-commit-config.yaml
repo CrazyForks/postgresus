@@ -6,14 +6,14 @@ repos:
     hooks:
       - id: frontend-format
         name: Frontend Format (Prettier)
-        entry: powershell -Command "cd frontend; npm run format"
+        entry: bash -c "cd frontend && npm run format"
         language: system
         files: ^frontend/.*\.(ts|tsx|js|jsx|json|css|md)$
         pass_filenames: false
 
       - id: frontend-lint
         name: Frontend Lint (ESLint)
-        entry: powershell -Command "cd frontend; npm run lint"
+        entry: bash -c "cd frontend && npm run lint"
         language: system
         files: ^frontend/.*\.(ts|tsx|js|jsx)$
         pass_filenames: false
@@ -23,7 +23,7 @@ repos:
     hooks:
       - id: backend-format-and-lint
         name: Backend Format & Lint (golangci-lint)
-        entry: powershell -Command "cd backend; golangci-lint fmt; golangci-lint run"
+        entry: bash -c "cd backend && golangci-lint fmt ./internal/... ./cmd/... && golangci-lint run ./internal/... ./cmd/..."
         language: system
         files: ^backend/.*\.go$
         pass_filenames: false

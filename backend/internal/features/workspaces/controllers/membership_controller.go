@@ -161,7 +161,12 @@ func (c *MembershipController) ChangeMemberRole(ctx *gin.Context) {
 		return
 	}
 
-	if err := c.membershipService.ChangeMemberRole(workspaceID, userID, &request, user); err != nil {
+	if err := c.membershipService.ChangeMemberRole(
+		workspaceID,
+		userID,
+		&request,
+		user,
+	); err != nil {
 		if errors.Is(err, workspaces_errors.ErrInsufficientPermissionsToManageMembers) ||
 			errors.Is(err, workspaces_errors.ErrOnlyOwnerCanAddManageAdmins) {
 			ctx.JSON(http.StatusForbidden, gin.H{"error": err.Error()})

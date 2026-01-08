@@ -97,7 +97,13 @@ func (m *MongodbDatabase) TestConnection(
 	}
 	m.Version = detectedVersion
 
-	if err := checkBackupPermissions(ctx, client, m.Username, m.Database, m.AuthDatabase); err != nil {
+	if err := checkBackupPermissions(
+		ctx,
+		client,
+		m.Username,
+		m.Database,
+		m.AuthDatabase,
+	); err != nil {
 		return err
 	}
 

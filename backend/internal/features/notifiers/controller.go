@@ -263,7 +263,12 @@ func (c *NotifierController) TransferNotifierToWorkspace(ctx *gin.Context) {
 		return
 	}
 
-	if err := c.notifierService.TransferNotifierToWorkspace(user, id, request.TargetWorkspaceID, nil); err != nil {
+	if err := c.notifierService.TransferNotifierToWorkspace(
+		user,
+		id,
+		request.TargetWorkspaceID,
+		nil,
+	); err != nil {
 		if errors.Is(err, ErrInsufficientPermissionsInSourceWorkspace) ||
 			errors.Is(err, ErrInsufficientPermissionsInTargetWorkspace) {
 			ctx.JSON(http.StatusForbidden, gin.H{"error": err.Error()})

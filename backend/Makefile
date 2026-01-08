@@ -2,10 +2,10 @@ run:
 	go run cmd/main.go
 
 test:
-	go test -p=1 -count=1 -failfast -timeout 10m .\internal\...
+	go test -p=1 -count=1 -failfast -timeout 10m ./internal/...
 
 lint:
-	golangci-lint fmt && golangci-lint run
+	golangci-lint fmt ./internal/... ./cmd/... && golangci-lint run ./internal/... ./cmd/...
 
 migration-create:
 	goose create $(name) sql

@@ -123,7 +123,11 @@ func Test_GetWorkspaceMembers_PermissionsEnforced(t *testing.T) {
 					"Bearer "+testUserToken,
 					tt.expectedStatusCode,
 				)
-				assert.Contains(t, string(resp.Body), "insufficient permissions to view workspace members")
+				assert.Contains(
+					t,
+					string(resp.Body),
+					"insufficient permissions to view workspace members",
+				)
 			}
 		})
 	}
@@ -1202,7 +1206,11 @@ func Test_TransferWorkspaceOwnership_PermissionsEnforced(t *testing.T) {
 			if tt.expectSuccess {
 				assert.Contains(t, string(resp.Body), "Ownership transferred successfully")
 			} else {
-				assert.Contains(t, string(resp.Body), "only workspace owner or admin can transfer ownership")
+				assert.Contains(
+					t,
+					string(resp.Body),
+					"only workspace owner or admin can transfer ownership",
+				)
 			}
 		})
 	}
