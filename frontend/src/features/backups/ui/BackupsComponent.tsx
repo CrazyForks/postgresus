@@ -64,21 +64,7 @@ export const BackupsComponent = ({ database, isCanManageDBs, scrollContainerRef 
 
   const downloadBackup = async (backupId: string) => {
     try {
-      const { blob, filename } = await backupsApi.downloadBackup(backupId);
-
-      // Create a download link
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-
-      // Trigger download
-      document.body.appendChild(link);
-      link.click();
-
-      // Cleanup
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      await backupsApi.downloadBackup(backupId);
     } catch (e) {
       alert((e as Error).message);
     } finally {

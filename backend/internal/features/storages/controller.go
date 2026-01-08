@@ -263,7 +263,12 @@ func (c *StorageController) TransferStorageToWorkspace(ctx *gin.Context) {
 		return
 	}
 
-	if err := c.storageService.TransferStorageToWorkspace(user, id, request.TargetWorkspaceID, nil); err != nil {
+	if err := c.storageService.TransferStorageToWorkspace(
+		user,
+		id,
+		request.TargetWorkspaceID,
+		nil,
+	); err != nil {
 		if errors.Is(err, ErrInsufficientPermissionsInSourceWorkspace) ||
 			errors.Is(err, ErrInsufficientPermissionsInTargetWorkspace) {
 			ctx.JSON(http.StatusForbidden, gin.H{"error": err.Error()})

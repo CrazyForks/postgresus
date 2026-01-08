@@ -56,11 +56,17 @@ func (s *UserService) SignUp(request *users_dto.SignUpRequestDTO) error {
 
 	// If user exists with INVITED status, activate them and set password
 	if existingUser != nil && existingUser.Status == users_enums.UserStatusInvited {
-		if err := s.userRepository.UpdateUserPassword(existingUser.ID, hashedPasswordStr); err != nil {
+		if err := s.userRepository.UpdateUserPassword(
+			existingUser.ID,
+			hashedPasswordStr,
+		); err != nil {
 			return fmt.Errorf("failed to set password: %w", err)
 		}
 
-		if err := s.userRepository.UpdateUserStatus(existingUser.ID, users_enums.UserStatusActive); err != nil {
+		if err := s.userRepository.UpdateUserStatus(
+			existingUser.ID,
+			users_enums.UserStatusActive,
+		); err != nil {
 			return fmt.Errorf("failed to activate user: %w", err)
 		}
 
@@ -635,7 +641,10 @@ func (s *UserService) getOrCreateUserFromOAuth(
 
 	if userByEmail != nil {
 		if userByEmail.Status == users_enums.UserStatusInvited {
-			if err := s.userRepository.UpdateUserStatus(userByEmail.ID, users_enums.UserStatusActive); err != nil {
+			if err := s.userRepository.UpdateUserStatus(
+				userByEmail.ID,
+				users_enums.UserStatusActive,
+			); err != nil {
 				return nil, fmt.Errorf("failed to activate user: %w", err)
 			}
 

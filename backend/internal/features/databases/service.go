@@ -631,7 +631,10 @@ func (s *DatabaseService) IsUserReadOnly(
 		usingDatabase = existingDatabase
 	} else {
 		if database.WorkspaceID != nil {
-			canAccess, _, err := s.workspaceService.CanUserAccessWorkspace(*database.WorkspaceID, user)
+			canAccess, _, err := s.workspaceService.CanUserAccessWorkspace(
+				*database.WorkspaceID,
+				user,
+			)
 			if err != nil {
 				return false, nil, err
 			}

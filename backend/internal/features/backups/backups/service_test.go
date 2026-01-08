@@ -65,6 +65,7 @@ func Test_BackupExecuted_NotificationSent(t *testing.T) {
 			workspaces_services.GetWorkspaceService(),
 			nil,
 			NewBackupContextManager(),
+			nil,
 		}
 
 		// Set up expectations
@@ -113,6 +114,7 @@ func Test_BackupExecuted_NotificationSent(t *testing.T) {
 			workspaces_services.GetWorkspaceService(),
 			nil,
 			NewBackupContextManager(),
+			nil,
 		}
 
 		backupService.MakeBackup(database.ID, true)
@@ -138,6 +140,7 @@ func Test_BackupExecuted_NotificationSent(t *testing.T) {
 			workspaces_services.GetWorkspaceService(),
 			nil,
 			NewBackupContextManager(),
+			nil,
 		}
 
 		// capture arguments

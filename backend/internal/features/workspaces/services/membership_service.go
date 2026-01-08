@@ -173,7 +173,11 @@ func (s *MembershipService) ChangeMemberRole(
 		return workspaces_errors.ErrUserNotFound
 	}
 
-	if err := s.membershipRepository.UpdateMemberRole(memberUserID, workspaceID, request.Role); err != nil {
+	if err := s.membershipRepository.UpdateMemberRole(
+		memberUserID,
+		workspaceID,
+		request.Role,
+	); err != nil {
 		return fmt.Errorf("failed to update member role: %w", err)
 	}
 
@@ -283,11 +287,19 @@ func (s *MembershipService) TransferOwnership(
 		return workspaces_errors.ErrNoCurrentWorkspaceOwner
 	}
 
-	if err := s.membershipRepository.UpdateMemberRole(newOwner.ID, workspaceID, users_enums.WorkspaceRoleOwner); err != nil {
+	if err := s.membershipRepository.UpdateMemberRole(
+		newOwner.ID,
+		workspaceID,
+		users_enums.WorkspaceRoleOwner,
+	); err != nil {
 		return fmt.Errorf("failed to update new owner role: %w", err)
 	}
 
-	if err := s.membershipRepository.UpdateMemberRole(currentOwner.UserID, workspaceID, users_enums.WorkspaceRoleAdmin); err != nil {
+	if err := s.membershipRepository.UpdateMemberRole(
+		currentOwner.UserID,
+		workspaceID,
+		users_enums.WorkspaceRoleAdmin,
+	); err != nil {
 		return fmt.Errorf("failed to update previous owner role: %w", err)
 	}
 

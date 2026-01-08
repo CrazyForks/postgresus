@@ -290,7 +290,12 @@ func Test_RestoreBackup_DiskSpaceValidation(t *testing.T) {
 					},
 				}
 			} else {
-				mysqlDB := createTestMySQLDatabase("Test MySQL DB", workspace.ID, owner.Token, router)
+				mysqlDB := createTestMySQLDatabase(
+					"Test MySQL DB",
+					workspace.ID,
+					owner.Token,
+					router,
+				)
 				storage := createTestStorage(workspace.ID)
 
 				configService := backups_config.GetBackupConfigService()
@@ -530,7 +535,13 @@ func createTestBackup(
 	dummyContent := []byte("dummy backup content for testing")
 	reader := strings.NewReader(string(dummyContent))
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := storages[0].SaveFile(context.Background(), fieldEncryptor, logger, backup.ID, reader); err != nil {
+	if err := storages[0].SaveFile(
+		context.Background(),
+		fieldEncryptor,
+		logger,
+		backup.ID,
+		reader,
+	); err != nil {
 		panic(fmt.Sprintf("Failed to create test backup file: %v", err))
 	}
 

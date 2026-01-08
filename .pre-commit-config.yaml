@@ -23,7 +23,7 @@ repos:
     hooks:
       - id: backend-format-and-lint
         name: Backend Format & Lint (golangci-lint)
-        entry: bash -c "cd backend && golangci-lint run --fix"
+        entry: bash -c "cd backend && golangci-lint fmt ./internal/... ./cmd/... && golangci-lint run ./internal/... ./cmd/..."
         language: system
         files: ^backend/.*\.go$
         pass_filenames: false

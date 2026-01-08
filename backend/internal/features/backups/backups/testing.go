@@ -14,13 +14,19 @@ import (
 )
 
 func CreateTestRouter() *gin.Engine {
-	return workspaces_testing.CreateTestRouter(
+	router := workspaces_testing.CreateTestRouter(
 		workspaces_controllers.GetWorkspaceController(),
 		workspaces_controllers.GetMembershipController(),
 		databases.GetDatabaseController(),
 		backups_config.GetBackupConfigController(),
 		GetBackupController(),
 	)
+
+	// Register public routes (no auth required - token-based)
+	v1 := router.Group("/api/v1")
+	GetBackupController().RegisterPublicRoutes(v1)
+
+	return router
 }
 
 // WaitForBackupCompletion waits for a new backup to be created and completed (or failed)

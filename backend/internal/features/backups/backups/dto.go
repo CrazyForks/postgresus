@@ -3,6 +3,8 @@ package backups
 import (
 	"databasus-backend/internal/features/backups/backups/encryption"
 	"io"
+
+	"github.com/google/uuid"
 )
 
 type GetBackupsRequest struct {
@@ -16,6 +18,12 @@ type GetBackupsResponse struct {
 	Total   int64     `json:"total"`
 	Limit   int       `json:"limit"`
 	Offset  int       `json:"offset"`
+}
+
+type GenerateDownloadTokenResponse struct {
+	Token    string    `json:"token"`
+	Filename string    `json:"filename"`
+	BackupID uuid.UUID `json:"backupId"`
 }
 
 type decryptionReaderCloser struct {

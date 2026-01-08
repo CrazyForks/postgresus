@@ -183,6 +183,7 @@ func setUpRoutes(r *gin.Engine) {
 	userController := users_controllers.GetUserController()
 	userController.RegisterRoutes(v1)
 	system_healthcheck.GetHealthcheckController().RegisterRoutes(v1)
+	backups.GetBackupController().RegisterPublicRoutes(v1)
 
 	// Setup auth middleware
 	userService := users_services.GetUserService()
@@ -242,6 +243,10 @@ func runBackgroundTasks(log *slog.Logger) {
 
 	go runWithPanicLogging(log, "audit log cleanup background service", func() {
 		audit_logs.GetAuditLogBackgroundService().Run()
+	})
+
+	go runWithPanicLogging(log, "download token cleanup background service", func() {
+		backups.GetDownloadTokenBackgroundService().Run()
 	})
 }
 

@@ -135,7 +135,14 @@ func (uc *CreatePostgresqlBackupUsecase) streamToStorage(
 	cmd := exec.CommandContext(ctx, pgBin, args...)
 	uc.logger.Info("Executing PostgreSQL backup command", "command", cmd.String())
 
-	if err := uc.setupPgEnvironment(cmd, pgpassFile, db.Postgresql.IsHttps, password, db.Postgresql.CpuCount, pgBin); err != nil {
+	if err := uc.setupPgEnvironment(
+		cmd,
+		pgpassFile,
+		db.Postgresql.IsHttps,
+		password,
+		db.Postgresql.CpuCount,
+		pgBin,
+	); err != nil {
 		return nil, err
 	}
 

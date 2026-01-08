@@ -18,9 +18,15 @@ type BackupController struct {
 func (c *BackupController) RegisterRoutes(router *gin.RouterGroup) {
 	router.GET("/backups", c.GetBackups)
 	router.POST("/backups", c.MakeBackup)
-	router.GET("/backups/:id/file", c.GetFile)
+	router.POST("/backups/:id/download-token", c.GenerateDownloadToken)
 	router.DELETE("/backups/:id", c.DeleteBackup)
 	router.POST("/backups/:id/cancel", c.CancelBackup)
+}
+
+// RegisterPublicRoutes registers routes that don't require Bearer authentication
+// (they have their own authentication mechanisms like download tokens)
+func (c *BackupController) RegisterPublicRoutes(router *gin.RouterGroup) {
+	router.GET("/backups/:id/file", c.GetFile)
 }
 
 // GetBackups
@@ -159,17 +165,16 @@ func (c *BackupController) CancelBackup(ctx *gin.Context) {
 	ctx.Status(http.StatusNoContent)
 }
 
-// GetFile
-// @Summary Download a backup file
-// @Description Download the backup file for the specified backup
+// GenerateDownloadToken
+// @Summary Generate short-lived download token
+// @Description Generate a token for downloading a backup file (valid for 5 minutes)
 // @Tags backups
 // @Param id path string true "Backup ID"
-// @Success 200 {file} file
+// @Success 200 {object} GenerateDownloadTokenResponse
 // @Failure 400
 // @Failure 401
-// @Failure 500
-// @Router /backups/{id}/file [get]
-func (c *BackupController) GetFile(ctx *gin.Context) {
+// @Router /backups/{id}/download-token [post]
+func (c *BackupController) GenerateDownloadToken(ctx *gin.Context) {
 	user, ok := users_middleware.GetUserFromContext(ctx)
 	if !ok {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
@@ -182,7 +187,56 @@ func (c *BackupController) GetFile(ctx *gin.Context) {
 		return
 	}
 
-	fileReader, backup, database, err := c.backupService.GetBackupFile(user, id)
+	response, err := c.backupService.GenerateDownloadToken(user, id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
+// GetFile
+// @Summary Download a backup file
+// @Description Download the backup file for the specified backup using a download token
+// @Tags backups
+// @Param id path string true "Backup ID"
+// @Param token query string true "Download token"
+// @Success 200 {file} file
+// @Failure 400
+// @Failure 401
+// @Failure 500
+// @Router /backups/{id}/file [get]
+func (c *BackupController) GetFile(ctx *gin.Context) {
+	token := ctx.Query("token")
+	if token == "" {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "download token is required"})
+		return
+	}
+
+	// Get backup ID from URL
+	backupIDParam := ctx.Param("id")
+	backupID, err := uuid.Parse(backupIDParam)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid backup ID"})
+		return
+	}
+
+	downloadToken, err := c.backupService.ValidateDownloadToken(token)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired download token"})
+		return
+	}
+
+	// Verify token is for the requested backup
+	if downloadToken.BackupID != backupID {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired download token"})
+		return
+	}
+
+	fileReader, backup, database, err := c.backupService.GetBackupFileWithoutAuth(
+		downloadToken.BackupID,
+	)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -195,6 +249,12 @@ func (c *BackupController) GetFile(ctx *gin.Context) {
 
 	filename := c.generateBackupFilename(backup, database)
 
+	// Set Content-Length for progress tracking
+	if backup.BackupSizeMb > 0 {
+		sizeBytes := int64(backup.BackupSizeMb * 1024 * 1024)
+		ctx.Header("Content-Length", fmt.Sprintf("%d", sizeBytes))
+	}
+
 	ctx.Header("Content-Type", "application/octet-stream")
 	ctx.Header(
 		"Content-Disposition",
@@ -203,9 +263,12 @@ func (c *BackupController) GetFile(ctx *gin.Context) {
 
 	_, err = io.Copy(ctx.Writer, fileReader)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to stream file"})
+		fmt.Printf("Error streaming file: %v\n", err)
 		return
 	}
+
+	// Write audit log after successful download
+	c.backupService.WriteAuditLogForDownload(downloadToken.UserID, backup, database)
 }
 
 type MakeBackupRequest struct {

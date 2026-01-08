@@ -29,23 +29,25 @@ export const backupsApi = {
     return apiHelper.fetchDeleteRaw(`${getApplicationServer()}/api/v1/backups/${id}`);
   },
 
-  async downloadBackup(id: string): Promise<{ blob: Blob; filename: string }> {
-    const result = await apiHelper.fetchGetBlobWithHeaders(
-      `${getApplicationServer()}/api/v1/backups/${id}/file`,
-    );
+  async downloadBackup(id: string): Promise<void> {
+    // Generate short-lived download token
+    const tokenResponse = await apiHelper.fetchPostJson<{
+      token: string;
+      filename: string;
+      backupId: string;
+    }>(`${getApplicationServer()}/api/v1/backups/${id}/download-token`, new RequestOptions());
 
-    // Extract filename from Content-Disposition header
-    const contentDisposition = result.headers.get('Content-Disposition');
-    let filename = `backup_${id}.backup`; // fallback filename
+    // Create direct download link with token
+    const downloadUrl = `${getApplicationServer()}/api/v1/backups/${id}/file?token=${tokenResponse.token}`;
 
-    if (contentDisposition) {
-      const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
-      if (filenameMatch && filenameMatch[1]) {
-        filename = filenameMatch[1];
-      }
-    }
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = tokenResponse.filename;
+    link.style.display = 'none';
 
-    return { blob: result.blob, filename };
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   },
 
   async cancelBackup(id: string) {

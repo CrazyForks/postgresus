@@ -18,6 +18,7 @@ import (
 
 	"databasus-backend/internal/config"
 	audit_logs "databasus-backend/internal/features/audit_logs"
+	"databasus-backend/internal/features/backups/backups/download_token"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/databases/databases/postgresql"
@@ -89,7 +90,13 @@ func Test_GetBackups_PermissionsEnforced(t *testing.T) {
 					testUserToken = owner.Token
 				} else {
 					member := users_testing.CreateTestUser(users_enums.UserRoleMember)
-					workspaces_testing.AddMemberToWorkspace(workspace, member, *tt.workspaceRole, owner.Token, router)
+					workspaces_testing.AddMemberToWorkspace(
+						workspace,
+						member,
+						*tt.workspaceRole,
+						owner.Token,
+						router,
+					)
 					testUserToken = member.Token
 				}
 			} else {
@@ -181,7 +188,13 @@ func Test_CreateBackup_PermissionsEnforced(t *testing.T) {
 					testUserToken = owner.Token
 				} else {
 					member := users_testing.CreateTestUser(users_enums.UserRoleMember)
-					workspaces_testing.AddMemberToWorkspace(workspace, member, *tt.workspaceRole, owner.Token, router)
+					workspaces_testing.AddMemberToWorkspace(
+						workspace,
+						member,
+						*tt.workspaceRole,
+						owner.Token,
+						router,
+					)
 					testUserToken = member.Token
 				}
 			} else {
@@ -311,7 +324,13 @@ func Test_DeleteBackup_PermissionsEnforced(t *testing.T) {
 					testUserToken = owner.Token
 				} else {
 					member := users_testing.CreateTestUser(users_enums.UserRoleMember)
-					workspaces_testing.AddMemberToWorkspace(workspace, member, *tt.workspaceRole, owner.Token, router)
+					workspaces_testing.AddMemberToWorkspace(
+						workspace,
+						member,
+						*tt.workspaceRole,
+						owner.Token,
+						router,
+					)
 					testUserToken = member.Token
 				}
 			} else {
@@ -380,7 +399,7 @@ func Test_DeleteBackup_AuditLogWritten(t *testing.T) {
 	assert.True(t, found, "Audit log for backup deletion not found")
 }
 
-func Test_DownloadBackup_PermissionsEnforced(t *testing.T) {
+func Test_GenerateDownloadToken_PermissionsEnforced(t *testing.T) {
 	tests := []struct {
 		name               string
 		workspaceRole      *users_enums.WorkspaceRole
@@ -389,28 +408,28 @@ func Test_DownloadBackup_PermissionsEnforced(t *testing.T) {
 		expectedStatusCode int
 	}{
 		{
-			name:               "workspace viewer can download backup",
+			name:               "workspace viewer can generate token",
 			workspaceRole:      func() *users_enums.WorkspaceRole { r := users_enums.WorkspaceRoleViewer; return &r }(),
 			isGlobalAdmin:      false,
 			expectSuccess:      true,
 			expectedStatusCode: http.StatusOK,
 		},
 		{
-			name:               "workspace member can download backup",
+			name:               "workspace member can generate token",
 			workspaceRole:      func() *users_enums.WorkspaceRole { r := users_enums.WorkspaceRoleMember; return &r }(),
 			isGlobalAdmin:      false,
 			expectSuccess:      true,
 			expectedStatusCode: http.StatusOK,
 		},
 		{
-			name:               "non-member cannot download backup",
+			name:               "non-member cannot generate token",
 			workspaceRole:      nil,
 			isGlobalAdmin:      false,
 			expectSuccess:      false,
 			expectedStatusCode: http.StatusBadRequest,
 		},
 		{
-			name:               "global admin can download backup",
+			name:               "global admin can generate token",
 			workspaceRole:      nil,
 			isGlobalAdmin:      true,
 			expectSuccess:      true,
@@ -435,7 +454,13 @@ func Test_DownloadBackup_PermissionsEnforced(t *testing.T) {
 					testUserToken = owner.Token
 				} else {
 					member := users_testing.CreateTestUser(users_enums.UserRoleMember)
-					workspaces_testing.AddMemberToWorkspace(workspace, member, *tt.workspaceRole, owner.Token, router)
+					workspaces_testing.AddMemberToWorkspace(
+						workspace,
+						member,
+						*tt.workspaceRole,
+						owner.Token,
+						router,
+					)
 					testUserToken = member.Token
 				}
 			} else {
@@ -443,19 +468,242 @@ func Test_DownloadBackup_PermissionsEnforced(t *testing.T) {
 				testUserToken = nonMember.Token
 			}
 
-			testResp := test_utils.MakeGetRequest(
+			testResp := test_utils.MakePostRequest(
 				t,
 				router,
-				fmt.Sprintf("/api/v1/backups/%s/file", backup.ID.String()),
+				fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
 				"Bearer "+testUserToken,
+				nil,
 				tt.expectedStatusCode,
 			)
 
-			if !tt.expectSuccess {
+			if tt.expectSuccess {
+				var response GenerateDownloadTokenResponse
+				err := json.Unmarshal(testResp.Body, &response)
+				assert.NoError(t, err)
+				assert.NotEmpty(t, response.Token)
+				assert.NotEmpty(t, response.Filename)
+				assert.Equal(t, backup.ID, response.BackupID)
+			} else {
 				assert.Contains(t, string(testResp.Body), "insufficient permissions")
 			}
 		})
 	}
+}
+
+func Test_DownloadBackup_WithValidToken_Success(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+
+	_, backup := createTestDatabaseWithBackups(workspace, owner, router)
+
+	// Generate download token
+	var tokenResponse GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&tokenResponse,
+	)
+
+	// Download with token
+	testResp := test_utils.MakeGetRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/file?token=%s", backup.ID.String(), tokenResponse.Token),
+		"",
+		http.StatusOK,
+	)
+
+	// Verify response
+	contentDisposition := testResp.Headers.Get("Content-Disposition")
+	assert.Contains(t, contentDisposition, "attachment")
+	assert.Contains(t, contentDisposition, tokenResponse.Filename)
+}
+
+func Test_DownloadBackup_WithoutToken_Unauthorized(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+
+	_, backup := createTestDatabaseWithBackups(workspace, owner, router)
+
+	// Try to download without token
+	testResp := test_utils.MakeGetRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/file", backup.ID.String()),
+		"",
+		http.StatusUnauthorized,
+	)
+
+	assert.Contains(t, string(testResp.Body), "download token is required")
+}
+
+func Test_DownloadBackup_WithInvalidToken_Unauthorized(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+
+	_, backup := createTestDatabaseWithBackups(workspace, owner, router)
+
+	// Try to download with invalid token
+	testResp := test_utils.MakeGetRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/file?token=%s", backup.ID.String(), "invalid-token-xyz"),
+		"",
+		http.StatusUnauthorized,
+	)
+
+	assert.Contains(t, string(testResp.Body), "invalid or expired download token")
+}
+
+func Test_DownloadBackup_WithExpiredToken_Unauthorized(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+
+	database, backup := createTestDatabaseWithBackups(workspace, owner, router)
+
+	// Get user for token generation
+	userService := users_services.GetUserService()
+	user, err := userService.GetUserFromToken(owner.Token)
+	assert.NoError(t, err)
+
+	// Create an expired token directly in the database
+	expiredToken := createExpiredDownloadToken(backup.ID, user.ID)
+
+	// Try to download with expired token
+	testResp := test_utils.MakeGetRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/file?token=%s", backup.ID.String(), expiredToken),
+		"",
+		http.StatusUnauthorized,
+	)
+
+	assert.Contains(t, string(testResp.Body), "invalid or expired download token")
+
+	// Verify audit log was NOT created for failed download
+	time.Sleep(100 * time.Millisecond)
+	auditLogService := audit_logs.GetAuditLogService()
+	auditLogs, err := auditLogService.GetWorkspaceAuditLogs(
+		workspace.ID,
+		&audit_logs.GetAuditLogsRequest{
+			Limit:  100,
+			Offset: 0,
+		},
+	)
+	assert.NoError(t, err)
+
+	found := false
+	for _, log := range auditLogs.AuditLogs {
+		if strings.Contains(log.Message, "Backup file downloaded") &&
+			strings.Contains(log.Message, database.Name) {
+			found = true
+			break
+		}
+	}
+	assert.False(t, found, "Audit log should NOT be created for failed download with expired token")
+}
+
+func Test_DownloadBackup_TokenUsedOnce_CannotReuseToken(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+
+	_, backup := createTestDatabaseWithBackups(workspace, owner, router)
+
+	// Generate download token
+	var tokenResponse GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&tokenResponse,
+	)
+
+	// Download with token (first time - should succeed)
+	test_utils.MakeGetRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/file?token=%s", backup.ID.String(), tokenResponse.Token),
+		"",
+		http.StatusOK,
+	)
+
+	// Try to download again with same token (should fail)
+	testResp := test_utils.MakeGetRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/file?token=%s", backup.ID.String(), tokenResponse.Token),
+		"",
+		http.StatusUnauthorized,
+	)
+
+	assert.Contains(t, string(testResp.Body), "invalid or expired download token")
+}
+
+func Test_DownloadBackup_WithDifferentBackupToken_Unauthorized(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+
+	database1 := createTestDatabase("Database 1", workspace.ID, owner.Token, router)
+	storage := createTestStorage(workspace.ID)
+
+	configService := backups_config.GetBackupConfigService()
+	config1, err := configService.GetBackupConfigByDbId(database1.ID)
+	assert.NoError(t, err)
+	config1.IsBackupsEnabled = true
+	config1.StorageID = &storage.ID
+	config1.Storage = storage
+	_, err = configService.SaveBackupConfig(config1)
+	assert.NoError(t, err)
+
+	backup1 := createTestBackup(database1, owner)
+
+	database2 := createTestDatabase("Database 2", workspace.ID, owner.Token, router)
+	config2, err := configService.GetBackupConfigByDbId(database2.ID)
+	assert.NoError(t, err)
+	config2.IsBackupsEnabled = true
+	config2.StorageID = &storage.ID
+	config2.Storage = storage
+	_, err = configService.SaveBackupConfig(config2)
+	assert.NoError(t, err)
+
+	backup2 := createTestBackup(database2, owner)
+
+	// Generate token for backup1
+	var tokenResponse GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup1.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&tokenResponse,
+	)
+
+	// Try to use backup1's token to download backup2 (should fail)
+	testResp := test_utils.MakeGetRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/file?token=%s", backup2.ID.String(), tokenResponse.Token),
+		"",
+		http.StatusUnauthorized,
+	)
+
+	assert.Contains(t, string(testResp.Body), "invalid or expired download token")
 }
 
 func Test_DownloadBackup_AuditLogWritten(t *testing.T) {
@@ -465,11 +713,24 @@ func Test_DownloadBackup_AuditLogWritten(t *testing.T) {
 
 	database, backup := createTestDatabaseWithBackups(workspace, owner, router)
 
+	// Generate download token
+	var tokenResponse GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&tokenResponse,
+	)
+
+	// Download with token
 	test_utils.MakeGetRequest(
 		t,
 		router,
-		fmt.Sprintf("/api/v1/backups/%s/file", backup.ID.String()),
-		"Bearer "+owner.Token,
+		fmt.Sprintf("/api/v1/backups/%s/file?token=%s", backup.ID.String(), tokenResponse.Token),
+		"",
 		http.StatusOK,
 	)
 
@@ -544,11 +805,28 @@ func Test_DownloadBackup_ProperFilenameForPostgreSQL(t *testing.T) {
 
 			backup := createTestBackup(database, owner)
 
+			// Generate download token
+			var tokenResponse GenerateDownloadTokenResponse
+			test_utils.MakePostRequestAndUnmarshal(
+				t,
+				router,
+				fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+				"Bearer "+owner.Token,
+				nil,
+				http.StatusOK,
+				&tokenResponse,
+			)
+
+			// Download with token
 			resp := test_utils.MakeGetRequest(
 				t,
 				router,
-				fmt.Sprintf("/api/v1/backups/%s/file", backup.ID.String()),
-				"Bearer "+owner.Token,
+				fmt.Sprintf(
+					"/api/v1/backups/%s/file?token=%s",
+					backup.ID.String(),
+					tokenResponse.Token,
+				),
+				"",
 				http.StatusOK,
 			)
 
@@ -817,9 +1095,38 @@ func createTestBackup(
 	dummyContent := []byte("dummy backup content for testing")
 	reader := strings.NewReader(string(dummyContent))
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := storages[0].SaveFile(context.Background(), encryption.GetFieldEncryptor(), logger, backup.ID, reader); err != nil {
+	if err := storages[0].SaveFile(
+		context.Background(),
+		encryption.GetFieldEncryptor(),
+		logger,
+		backup.ID,
+		reader,
+	); err != nil {
 		panic(fmt.Sprintf("Failed to create test backup file: %v", err))
 	}
 
 	return backup
+}
+
+func createExpiredDownloadToken(backupID, userID uuid.UUID) string {
+	tokenService := GetBackupService().downloadTokenService
+	token, err := tokenService.Generate(backupID, userID)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to generate download token: %v", err))
+	}
+
+	// Manually update the token to be expired
+	repo := &download_token.DownloadTokenRepository{}
+	downloadToken, err := repo.FindByToken(token)
+	if err != nil || downloadToken == nil {
+		panic(fmt.Sprintf("Failed to find generated token: %v", err))
+	}
+
+	// Set expiration to 10 minutes ago
+	downloadToken.ExpiresAt = time.Now().UTC().Add(-10 * time.Minute)
+	if err := repo.Update(downloadToken); err != nil {
+		panic(fmt.Sprintf("Failed to update token expiration: %v", err))
+	}
+
+	return token
 }

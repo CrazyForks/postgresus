@@ -12,6 +12,7 @@ import (
 	"time"
 
 	audit_logs "databasus-backend/internal/features/audit_logs"
+	"databasus-backend/internal/features/backups/backups/download_token"
 	"databasus-backend/internal/features/backups/backups/encryption"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
@@ -44,6 +45,7 @@ type BackupService struct {
 	workspaceService     *workspaces_services.WorkspaceService
 	auditLogService      *audit_logs.AuditLogService
 	backupContextManager *BackupContextManager
+	downloadTokenService *download_token.DownloadTokenService
 }
 
 func (s *BackupService) AddBackupRemoveListener(listener BackupRemoveListener) {
@@ -682,4 +684,114 @@ func (s *BackupService) getBackupReader(backupID uuid.UUID) (io.ReadCloser, erro
 		decryptionReader,
 		fileReader,
 	}, nil
+}
+
+func (s *BackupService) GenerateDownloadToken(
+	user *users_models.User,
+	backupID uuid.UUID,
+) (*GenerateDownloadTokenResponse, error) {
+	backup, err := s.backupRepository.FindByID(backupID)
+	if err != nil {
+		return nil, err
+	}
+
+	database, err := s.databaseService.GetDatabaseByID(backup.DatabaseID)
+	if err != nil {
+		return nil, err
+	}
+
+	if database.WorkspaceID == nil {
+		return nil, errors.New("cannot download backup for database without workspace")
+	}
+
+	canAccess, _, err := s.workspaceService.CanUserAccessWorkspace(*database.WorkspaceID, user)
+	if err != nil {
+		return nil, err
+	}
+	if !canAccess {
+		return nil, errors.New("insufficient permissions to download backup for this database")
+	}
+
+	token, err := s.downloadTokenService.Generate(backupID, user.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	filename := s.generateBackupFilename(backup, database)
+
+	s.auditLogService.WriteAuditLog(
+		fmt.Sprintf("Download token generated for backup of database: %s", database.Name),
+		&user.ID,
+		database.WorkspaceID,
+	)
+
+	return &GenerateDownloadTokenResponse{
+		Token:    token,
+		Filename: filename,
+		BackupID: backupID,
+	}, nil
+}
+
+func (s *BackupService) ValidateDownloadToken(token string) (*download_token.DownloadToken, error) {
+	return s.downloadTokenService.ValidateAndConsume(token)
+}
+
+func (s *BackupService) GetBackupFileWithoutAuth(
+	backupID uuid.UUID,
+) (io.ReadCloser, *Backup, *databases.Database, error) {
+	backup, err := s.backupRepository.FindByID(backupID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	database, err := s.databaseService.GetDatabaseByID(backup.DatabaseID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	reader, err := s.getBackupReader(backupID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return reader, backup, database, nil
+}
+
+func (s *BackupService) WriteAuditLogForDownload(
+	userID uuid.UUID,
+	backup *Backup,
+	database *databases.Database,
+) {
+	s.auditLogService.WriteAuditLog(
+		fmt.Sprintf(
+			"Backup file downloaded for database: %s (ID: %s)",
+			database.Name,
+			backup.ID.String(),
+		),
+		&userID,
+		database.WorkspaceID,
+	)
+}
+
+func (s *BackupService) generateBackupFilename(
+	backup *Backup,
+	database *databases.Database,
+) string {
+	timestamp := backup.CreatedAt.Format("2006-01-02_15-04-05")
+	safeName := sanitizeFilename(database.Name)
+	extension := s.getBackupExtension(database.Type)
+	return fmt.Sprintf("%s_backup_%s%s", safeName, timestamp, extension)
+}
+
+func (s *BackupService) getBackupExtension(dbType databases.DatabaseType) string {
+	switch dbType {
+	case databases.DatabaseTypeMysql, databases.DatabaseTypeMariadb:
+		return ".sql.zst"
+	case databases.DatabaseTypePostgres:
+		return ".dump"
+	case databases.DatabaseTypeMongodb:
+		return ".archive"
+	default:
+		return ".backup"
+	}
 }
