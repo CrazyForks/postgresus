@@ -5,7 +5,7 @@ test:
 	go test -p=1 -count=1 -failfast -timeout 10m ./internal/...
 
 lint:
-	golangci-lint fmt ./internal/... ./cmd/... && golangci-lint run ./internal/... ./cmd/...
+	golangci-lint fmt && golangci-lint run
 
 migration-create:
 	goose create $(name) sql
