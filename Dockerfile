@@ -245,7 +245,10 @@ PG_BIN="/usr/lib/postgresql/17/bin"
 # Ensure proper ownership of data directory
 echo "Setting up data directory permissions..."
 mkdir -p /databasus-data/pgdata
+mkdir -p /databasus-data/temp
+mkdir -p /databasus-data/backups
 chown -R postgres:postgres /databasus-data
+chmod 700 /databasus-data/temp
 
 # Initialize PostgreSQL if not already initialized
 if [ ! -s "/databasus-data/pgdata/PG_VERSION" ]; then
