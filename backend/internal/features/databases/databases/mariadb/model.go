@@ -562,9 +562,9 @@ func detectPrivileges(ctx context.Context, db *sql.DB, database string) (string,
 }
 
 // checkBackupPermissions verifies the user has sufficient privileges for mariadb-dump backup.
-// Required: SELECT, SHOW VIEW, PROCESS. Optional: LOCK TABLES, TRIGGER, EVENT.
+// Required: SELECT, SHOW VIEW
 func checkBackupPermissions(privileges string) error {
-	requiredPrivileges := []string{"SELECT", "SHOW VIEW", "PROCESS"}
+	requiredPrivileges := []string{"SELECT", "SHOW VIEW"}
 
 	var missingPrivileges []string
 	for _, priv := range requiredPrivileges {
@@ -575,7 +575,7 @@ func checkBackupPermissions(privileges string) error {
 
 	if len(missingPrivileges) > 0 {
 		return fmt.Errorf(
-			"insufficient permissions for backup. Missing: %s. Required: SELECT, SHOW VIEW, PROCESS",
+			"insufficient permissions for backup. Missing: %s. Required: SELECT, SHOW VIEW",
 			strings.Join(missingPrivileges, ", "),
 		)
 	}
