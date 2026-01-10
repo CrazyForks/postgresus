@@ -2,11 +2,12 @@ import { EyeInvisibleOutlined, EyeTwoTone } from '@ant-design/icons';
 import { App, Button, Input } from 'antd';
 import { type JSX, useState } from 'react';
 
-import { IS_CLOUD } from '../../../constants';
+import { GITHUB_CLIENT_ID, GOOGLE_CLIENT_ID } from '../../../constants';
 import { userApi } from '../../../entity/users';
 import { StringUtils } from '../../../shared/lib';
 import { FormValidator } from '../../../shared/lib/FormValidator';
-import { OauthComponent } from './OauthComponent';
+import { GithubOAuthComponent } from './oauth/GithubOAuthComponent';
+import { GoogleOAuthComponent } from './oauth/GoogleOAuthComponent';
 
 interface SignUpComponentProps {
   onSwitchToSignIn?: () => void;
@@ -98,9 +99,14 @@ export function SignUpComponent({ onSwitchToSignIn }: SignUpComponentProps): JSX
     <div className="w-full max-w-[300px]">
       <div className="mb-5 text-center text-2xl font-bold">Sign up</div>
 
-      <OauthComponent />
+      <div className="mt-4">
+        <div className="space-y-2">
+          <GithubOAuthComponent />
+          <GoogleOAuthComponent />
+        </div>
+      </div>
 
-      {IS_CLOUD && (
+      {(GOOGLE_CLIENT_ID || GITHUB_CLIENT_ID) && (
         <div className="relative my-6">
           <div className="absolute inset-0 flex items-center">
             <div className="w-full border-t border-gray-300"></div>

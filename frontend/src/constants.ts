@@ -40,7 +40,3 @@ export const GOOGLE_CLIENT_ID =
 export function getOAuthRedirectUri(): string {
   return `${window.location.origin}/auth/callback`;
 }
-
-export function isOAuthEnabled(): boolean {
-  return IS_CLOUD && (!!GITHUB_CLIENT_ID || !!GOOGLE_CLIENT_ID);
-}
