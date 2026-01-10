@@ -2,6 +2,7 @@ package mariadb
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -14,7 +15,7 @@ import (
 	"databasus-backend/internal/util/encryption"
 	"databasus-backend/internal/util/tools"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 )
 
@@ -398,8 +399,16 @@ func HasPrivilege(privileges, priv string) bool {
 
 func (m *MariadbDatabase) buildDSN(password string, database string) string {
 	tlsConfig := "false"
+
 	if m.IsHttps {
-		tlsConfig = "skip-verify"
+		err := mysql.RegisterTLSConfig("mariadb-skip-verify", &tls.Config{
+			InsecureSkipVerify: true,
+		})
+		if err != nil {
+			// Config might already be registered, which is fine
+			_ = err
+		}
+		tlsConfig = "mariadb-skip-verify"
 	}
 
 	return fmt.Sprintf(
