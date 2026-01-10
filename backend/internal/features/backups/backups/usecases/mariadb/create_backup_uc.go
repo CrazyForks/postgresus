@@ -122,6 +122,7 @@ func (uc *CreateMariadbBackupUsecase) buildMariadbDumpArgs(
 
 	if mdb.IsHttps {
 		args = append(args, "--ssl")
+		args = append(args, "--skip-ssl-verify-server-cert")
 	}
 
 	if mdb.Database != nil && *mdb.Database != "" {
