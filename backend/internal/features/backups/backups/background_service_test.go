@@ -75,6 +75,9 @@ func Test_MakeBackupForDbHavingBackupDayAgo_BackupCreated(t *testing.T) {
 	backups, err := backupRepository.FindByDatabaseID(database.ID)
 	assert.NoError(t, err)
 	assert.Len(t, backups, 2)
+
+	// Wait for any cleanup operations to complete before defer cleanup runs
+	time.Sleep(200 * time.Millisecond)
 }
 
 func Test_MakeBackupForDbHavingHourAgoBackup_BackupSkipped(t *testing.T) {
@@ -135,6 +138,9 @@ func Test_MakeBackupForDbHavingHourAgoBackup_BackupSkipped(t *testing.T) {
 	backups, err := backupRepository.FindByDatabaseID(database.ID)
 	assert.NoError(t, err)
 	assert.Len(t, backups, 1) // Should still be 1 backup, no new backup created
+
+	// Wait for any cleanup operations to complete before defer cleanup runs
+	time.Sleep(200 * time.Millisecond)
 }
 
 func Test_MakeBackupHavingFailedBackupWithoutRetries_BackupSkipped(t *testing.T) {
@@ -199,6 +205,9 @@ func Test_MakeBackupHavingFailedBackupWithoutRetries_BackupSkipped(t *testing.T)
 	backups, err := backupRepository.FindByDatabaseID(database.ID)
 	assert.NoError(t, err)
 	assert.Len(t, backups, 1) // Should still be 1 backup, no retry attempted
+
+	// Wait for any cleanup operations to complete before defer cleanup runs
+	time.Sleep(200 * time.Millisecond)
 }
 
 func Test_MakeBackupHavingFailedBackupWithRetries_BackupCreated(t *testing.T) {
@@ -264,6 +273,9 @@ func Test_MakeBackupHavingFailedBackupWithRetries_BackupCreated(t *testing.T) {
 	backups, err := backupRepository.FindByDatabaseID(database.ID)
 	assert.NoError(t, err)
 	assert.Len(t, backups, 2) // Should have 2 backups, retry was attempted
+
+	// Wait for any cleanup operations to complete before defer cleanup runs
+	time.Sleep(200 * time.Millisecond)
 }
 
 func Test_MakeBackupHavingFailedBackupWithRetries_RetriesCountNotExceeded(t *testing.T) {
@@ -330,6 +342,9 @@ func Test_MakeBackupHavingFailedBackupWithRetries_RetriesCountNotExceeded(t *tes
 	backups, err := backupRepository.FindByDatabaseID(database.ID)
 	assert.NoError(t, err)
 	assert.Len(t, backups, 3) // Should have 3 backups, not more than max
+
+	// Wait for any cleanup operations to complete before defer cleanup runs
+	time.Sleep(200 * time.Millisecond)
 }
 
 func Test_MakeBackgroundBackupWhenBakupsDisabled_BackupSkipped(t *testing.T) {
@@ -386,4 +401,7 @@ func Test_MakeBackgroundBackupWhenBakupsDisabled_BackupSkipped(t *testing.T) {
 	backups, err := backupRepository.FindByDatabaseID(database.ID)
 	assert.NoError(t, err)
 	assert.Len(t, backups, 1)
+
+	// Wait for any cleanup operations to complete before defer cleanup runs
+	time.Sleep(200 * time.Millisecond)
 }

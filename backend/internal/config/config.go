@@ -79,6 +79,13 @@ type EnvVariables struct {
 	TestMongodb70Port string `env:"TEST_MONGODB_70_PORT"`
 	TestMongodb82Port string `env:"TEST_MONGODB_82_PORT"`
 
+	// Valkey
+	ValkeyHost     string `env:"VALKEY_HOST"     required:"true"`
+	ValkeyPort     string `env:"VALKEY_PORT"     required:"true"`
+	ValkeyUsername string `env:"VALKEY_USERNAME"`
+	ValkeyPassword string `env:"VALKEY_PASSWORD"`
+	ValkeyIsSsl    bool   `env:"VALKEY_IS_SSL"   required:"true"`
+
 	// oauth
 	GitHubClientID     string `env:"GITHUB_CLIENT_ID"`
 	GitHubClientSecret string `env:"GITHUB_CLIENT_SECRET"`
@@ -188,6 +195,16 @@ func loadEnvVariables() {
 
 	env.MongodbInstallDir = filepath.Join(backendRoot, "tools", "mongodb")
 	tools.VerifyMongodbInstallation(log, env.EnvMode, env.MongodbInstallDir)
+
+	// Valkey
+	if env.ValkeyHost == "" {
+		log.Error("VALKEY_HOST is empty")
+		os.Exit(1)
+	}
+	if env.ValkeyPort == "" {
+		log.Error("VALKEY_PORT is empty")
+		os.Exit(1)
+	}
 
 	// Store the data and temp folders one level below the root
 	// (projectRoot/databasus-data -> /databasus-data)

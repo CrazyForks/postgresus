@@ -22,7 +22,7 @@ RUN npm run build
 
 # ========= BUILD BACKEND =========
 # Backend build stage
-FROM --platform=$BUILDPLATFORM golang:1.24.4 AS backend-build
+FROM --platform=$BUILDPLATFORM golang:1.24.9 AS backend-build
 
 # Make TARGET args available early so tools built here match the final image arch
 ARG TARGETOS
@@ -121,6 +121,15 @@ RUN wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
   > /etc/apt/sources.list.d/pgdg.list && \
   apt-get update && \
   apt-get install -y --no-install-recommends postgresql-17 && \
+  rm -rf /var/lib/apt/lists/*
+
+# Install Valkey server from debian repository
+# Valkey is only accessible internally (localhost) - not exposed outside container
+RUN wget -O /usr/share/keyrings/greensec.github.io-valkey-debian.key https://greensec.github.io/valkey-debian/public.key && \
+  echo "deb [signed-by=/usr/share/keyrings/greensec.github.io-valkey-debian.key] https://greensec.github.io/valkey-debian/repo $(lsb_release -cs) main" \
+  > /etc/apt/sources.list.d/valkey-debian.list && \
+  apt-get update && \
+  apt-get install -y --no-install-recommends valkey && \
   rm -rf /var/lib/apt/lists/*
 
 # ========= Install rclone =========
@@ -249,6 +258,30 @@ mkdir -p /databasus-data/temp
 mkdir -p /databasus-data/backups
 chown -R postgres:postgres /databasus-data
 chmod 700 /databasus-data/temp
+
+# ========= Start Valkey (internal cache) =========
+echo "Configuring Valkey cache..."
+cat > /tmp/valkey.conf << 'VALKEY_CONFIG'
+port 6379
+bind 127.0.0.1
+protected-mode yes
+save ""
+maxmemory 256mb
+maxmemory-policy allkeys-lru
+VALKEY_CONFIG
+
+echo "Starting Valkey..."
+valkey-server /tmp/valkey.conf &
+VALKEY_PID=\$!
+
+echo "Waiting for Valkey to be ready..."
+for i in {1..30}; do
+    if valkey-cli ping >/dev/null 2>&1; then
+        echo "Valkey is ready!"
+        break
+    fi
+    sleep 1
+done
 
 # Initialize PostgreSQL if not already initialized
 if [ ! -s "/databasus-data/pgdata/PG_VERSION" ]; then

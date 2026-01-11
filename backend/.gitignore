@@ -18,3 +18,4 @@ pgdata-for-restore/
 temp/
 cmd.exe
 temp/
+valkey-data/
