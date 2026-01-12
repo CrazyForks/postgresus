@@ -58,6 +58,8 @@ func SetupDependencies() {
 
 	databases.GetDatabaseService().AddDbRemoveListener(backupService)
 	databases.GetDatabaseService().AddDbCopyListener(backups_config.GetBackupConfigService())
+
+	backupContextManager.StartSubscription()
 }
 
 func GetBackupService() *BackupService {

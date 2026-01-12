@@ -29,6 +29,7 @@ import (
 	users_middleware "databasus-backend/internal/features/users/middleware"
 	users_services "databasus-backend/internal/features/users/services"
 	workspaces_controllers "databasus-backend/internal/features/workspaces/controllers"
+	cache_utils "databasus-backend/internal/util/cache"
 	env_utils "databasus-backend/internal/util/env"
 	files_utils "databasus-backend/internal/util/files"
 	"databasus-backend/internal/util/logger"
@@ -52,10 +53,17 @@ import (
 func main() {
 	log := logger.GetLogger()
 
+	cache_utils.TestCacheConnection()
+	err := cache_utils.ClearAllCache()
+	if err != nil {
+		log.Error("Failed to clear cache", "error", err)
+		os.Exit(1)
+	}
+
 	runMigrations(log)
 
 	// create directories that used for backups and restore
-	err := files_utils.EnsureDirectories([]string{
+	err = files_utils.EnsureDirectories([]string{
 		config.GetEnv().TempFolder,
 		config.GetEnv().DataFolder,
 	})
@@ -290,15 +298,12 @@ func generateSwaggerDocs(log *slog.Logger) {
 func runMigrations(log *slog.Logger) {
 	log.Info("Running database migrations...")
 
-	cmd := exec.Command("goose", "up")
+	cmd := exec.Command("goose", "-dir", "./migrations", "up")
 	cmd.Env = append(
 		os.Environ(),
 		"GOOSE_DRIVER=postgres",
 		"GOOSE_DBSTRING="+config.GetEnv().DatabaseDsn,
 	)
-
-	// Set the working directory to where migrations are located
-	cmd.Dir = "./migrations"
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

@@ -17,7 +17,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24.4"
+          go-version: "1.24.9"
 
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -134,7 +134,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24.4"
+          go-version: "1.24.9"
 
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -221,6 +221,12 @@ jobs:
           TEST_MONGODB_60_PORT=27060
           TEST_MONGODB_70_PORT=27070
           TEST_MONGODB_82_PORT=27082
+          # Valkey (cache)
+          VALKEY_HOST=localhost
+          VALKEY_PORT=6379
+          VALKEY_USERNAME=
+          VALKEY_PASSWORD=
+          VALKEY_IS_SSL=false
           EOF
 
       - name: Start test containers
@@ -232,6 +238,11 @@ jobs:
         run: |
           # Wait for main dev database
           timeout 60 bash -c 'until docker exec dev-db pg_isready -h localhost -p 5437 -U postgres; do sleep 2; done'
+
+          # Wait for Valkey (cache)
+          echo "Waiting for Valkey..."
+          timeout 60 bash -c 'until docker exec dev-valkey valkey-cli ping 2>/dev/null | grep -q PONG; do sleep 2; done'
+          echo "Valkey is ready!"
 
           # Wait for test databases
           timeout 60 bash -c 'until nc -z localhost 5000; do sleep 2; done'
