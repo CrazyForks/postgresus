@@ -2,13 +2,12 @@ package users_controllers
 
 import (
 	users_services "databasus-backend/internal/features/users/services"
-
-	"golang.org/x/time/rate"
+	cache_utils "databasus-backend/internal/util/cache"
 )
 
 var userController = &UserController{
 	users_services.GetUserService(),
-	rate.NewLimiter(rate.Limit(3), 3), // 3 rps with 3 burst
+	cache_utils.NewRateLimiter(cache_utils.GetValkeyClient()),
 }
 
 var settingsController = &SettingsController{
