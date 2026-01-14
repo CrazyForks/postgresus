@@ -18,7 +18,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"databasus-backend/internal/config"
-	"databasus-backend/internal/features/backups/backups"
+	backups_core "databasus-backend/internal/features/backups/backups/core"
 	"databasus-backend/internal/features/backups/backups/encryption"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
@@ -40,7 +40,7 @@ func (uc *RestoreMysqlBackupUsecase) Execute(
 	restoringToDB *databases.Database,
 	backupConfig *backups_config.BackupConfig,
 	restore models.Restore,
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 	storage *storages.Storage,
 ) error {
 	if originalDB.Type != databases.DatabaseTypeMysql {
@@ -98,7 +98,7 @@ func (uc *RestoreMysqlBackupUsecase) restoreFromStorage(
 	mysqlBin string,
 	args []string,
 	password string,
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 	storage *storages.Storage,
 	myConfig *mysqltypes.MysqlDatabase,
 ) error {
@@ -154,7 +154,7 @@ func (uc *RestoreMysqlBackupUsecase) executeMysqlRestore(
 	args []string,
 	myCnfFile string,
 	backupReader io.ReadCloser,
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 ) error {
 	fullArgs := append([]string{"--defaults-file=" + myCnfFile}, args...)
 
@@ -217,7 +217,7 @@ func (uc *RestoreMysqlBackupUsecase) executeMysqlRestore(
 
 func (uc *RestoreMysqlBackupUsecase) setupDecryption(
 	reader io.Reader,
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 ) (io.Reader, error) {
 	if backup.EncryptionSalt == nil || backup.EncryptionIV == nil {
 		return nil, fmt.Errorf("backup is encrypted but missing encryption metadata")

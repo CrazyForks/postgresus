@@ -1,4 +1,4 @@
-package backups
+package backups_cancellation
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 )
 
 func Test_RegisterBackup_BackupRegisteredSuccessfully(t *testing.T) {
-	manager := NewBackupContextManager()
+	manager := backupCancelManager
 
 	backupID := uuid.New()
 	_, cancel := context.WithCancel(context.Background())
@@ -26,7 +26,7 @@ func Test_RegisterBackup_BackupRegisteredSuccessfully(t *testing.T) {
 }
 
 func Test_UnregisterBackup_BackupUnregisteredSuccessfully(t *testing.T) {
-	manager := NewBackupContextManager()
+	manager := backupCancelManager
 
 	backupID := uuid.New()
 	_, cancel := context.WithCancel(context.Background())
@@ -42,7 +42,7 @@ func Test_UnregisterBackup_BackupUnregisteredSuccessfully(t *testing.T) {
 }
 
 func Test_CancelBackup_OnSameInstance_BackupCancelledViaPubSub(t *testing.T) {
-	manager := NewBackupContextManager()
+	manager := backupCancelManager
 
 	backupID := uuid.New()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -75,8 +75,8 @@ func Test_CancelBackup_OnSameInstance_BackupCancelledViaPubSub(t *testing.T) {
 }
 
 func Test_CancelBackup_FromDifferentInstance_BackupCancelledOnRunningInstance(t *testing.T) {
-	manager1 := NewBackupContextManager()
-	manager2 := NewBackupContextManager()
+	manager1 := backupCancelManager
+	manager2 := backupCancelManager
 
 	backupID := uuid.New()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -111,7 +111,7 @@ func Test_CancelBackup_FromDifferentInstance_BackupCancelledOnRunningInstance(t 
 }
 
 func Test_CancelBackup_WhenBackupDoesNotExist_NoErrorReturned(t *testing.T) {
-	manager := NewBackupContextManager()
+	manager := backupCancelManager
 
 	manager.StartSubscription()
 	time.Sleep(100 * time.Millisecond)
@@ -122,7 +122,7 @@ func Test_CancelBackup_WhenBackupDoesNotExist_NoErrorReturned(t *testing.T) {
 }
 
 func Test_CancelBackup_WithMultipleBackups_AllBackupsCancelled(t *testing.T) {
-	manager := NewBackupContextManager()
+	manager := backupCancelManager
 
 	numBackups := 5
 	backupIDs := make([]uuid.UUID, numBackups)
@@ -165,7 +165,7 @@ func Test_CancelBackup_WithMultipleBackups_AllBackupsCancelled(t *testing.T) {
 }
 
 func Test_CancelBackup_AfterUnregister_BackupNotCancelled(t *testing.T) {
-	manager := NewBackupContextManager()
+	manager := backupCancelManager
 
 	backupID := uuid.New()
 	_, cancel := context.WithCancel(context.Background())

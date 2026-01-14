@@ -1,10 +1,9 @@
 package backups
 
 import (
+	backups_core "databasus-backend/internal/features/backups/backups/core"
 	"databasus-backend/internal/features/backups/backups/encryption"
 	"io"
-
-	"github.com/google/uuid"
 )
 
 type GetBackupsRequest struct {
@@ -14,23 +13,17 @@ type GetBackupsRequest struct {
 }
 
 type GetBackupsResponse struct {
-	Backups []*Backup `json:"backups"`
-	Total   int64     `json:"total"`
-	Limit   int       `json:"limit"`
-	Offset  int       `json:"offset"`
+	Backups []*backups_core.Backup `json:"backups"`
+	Total   int64                  `json:"total"`
+	Limit   int                    `json:"limit"`
+	Offset  int                    `json:"offset"`
 }
 
-type GenerateDownloadTokenResponse struct {
-	Token    string    `json:"token"`
-	Filename string    `json:"filename"`
-	BackupID uuid.UUID `json:"backupId"`
-}
-
-type decryptionReaderCloser struct {
+type DecryptionReaderCloser struct {
 	*encryption.DecryptionReader
-	baseReader io.ReadCloser
+	BaseReader io.ReadCloser
 }
 
-func (r *decryptionReaderCloser) Close() error {
-	return r.baseReader.Close()
+func (r *DecryptionReaderCloser) Close() error {
+	return r.BaseReader.Close()
 }

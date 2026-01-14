@@ -18,7 +18,8 @@ import (
 
 	"databasus-backend/internal/config"
 	audit_logs "databasus-backend/internal/features/audit_logs"
-	"databasus-backend/internal/features/backups/backups/download_token"
+	backups_core "databasus-backend/internal/features/backups/backups/core"
+	backups_download "databasus-backend/internal/features/backups/backups/download"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/databases/databases/postgresql"
@@ -478,7 +479,7 @@ func Test_GenerateDownloadToken_PermissionsEnforced(t *testing.T) {
 			)
 
 			if tt.expectSuccess {
-				var response GenerateDownloadTokenResponse
+				var response backups_download.GenerateDownloadTokenResponse
 				err := json.Unmarshal(testResp.Body, &response)
 				assert.NoError(t, err)
 				assert.NotEmpty(t, response.Token)
@@ -499,7 +500,7 @@ func Test_DownloadBackup_WithValidToken_Success(t *testing.T) {
 	_, backup := createTestDatabaseWithBackups(workspace, owner, router)
 
 	// Generate download token
-	var tokenResponse GenerateDownloadTokenResponse
+	var tokenResponse backups_download.GenerateDownloadTokenResponse
 	test_utils.MakePostRequestAndUnmarshal(
 		t,
 		router,
@@ -620,7 +621,7 @@ func Test_DownloadBackup_TokenUsedOnce_CannotReuseToken(t *testing.T) {
 	_, backup := createTestDatabaseWithBackups(workspace, owner, router)
 
 	// Generate download token
-	var tokenResponse GenerateDownloadTokenResponse
+	var tokenResponse backups_download.GenerateDownloadTokenResponse
 	test_utils.MakePostRequestAndUnmarshal(
 		t,
 		router,
@@ -683,7 +684,7 @@ func Test_DownloadBackup_WithDifferentBackupToken_Unauthorized(t *testing.T) {
 	backup2 := createTestBackup(database2, owner)
 
 	// Generate token for backup1
-	var tokenResponse GenerateDownloadTokenResponse
+	var tokenResponse backups_download.GenerateDownloadTokenResponse
 	test_utils.MakePostRequestAndUnmarshal(
 		t,
 		router,
@@ -714,7 +715,7 @@ func Test_DownloadBackup_AuditLogWritten(t *testing.T) {
 	database, backup := createTestDatabaseWithBackups(workspace, owner, router)
 
 	// Generate download token
-	var tokenResponse GenerateDownloadTokenResponse
+	var tokenResponse backups_download.GenerateDownloadTokenResponse
 	test_utils.MakePostRequestAndUnmarshal(
 		t,
 		router,
@@ -806,7 +807,7 @@ func Test_DownloadBackup_ProperFilenameForPostgreSQL(t *testing.T) {
 			backup := createTestBackup(database, owner)
 
 			// Generate download token
-			var tokenResponse GenerateDownloadTokenResponse
+			var tokenResponse backups_download.GenerateDownloadTokenResponse
 			test_utils.MakePostRequestAndUnmarshal(
 				t,
 				router,
@@ -897,22 +898,22 @@ func Test_CancelBackup_InProgressBackup_SuccessfullyCancelled(t *testing.T) {
 	_, err = configService.SaveBackupConfig(config)
 	assert.NoError(t, err)
 
-	backup := &Backup{
+	backup := &backups_core.Backup{
 		ID:               uuid.New(),
 		DatabaseID:       database.ID,
 		StorageID:        storage.ID,
-		Status:           BackupStatusInProgress,
+		Status:           backups_core.BackupStatusInProgress,
 		BackupSizeMb:     0,
 		BackupDurationMs: 0,
 		CreatedAt:        time.Now().UTC(),
 	}
 
-	repo := &BackupRepository{}
+	repo := &backups_core.BackupRepository{}
 	err = repo.Save(backup)
 	assert.NoError(t, err)
 
 	// Register a cancellable context for the backup
-	GetBackupService().backupContextManager.RegisterBackup(backup.ID, func() {})
+	GetBackupService().backupCancelManager.RegisterBackup(backup.ID, func() {})
 
 	resp := test_utils.MakePostRequest(
 		t,
@@ -1038,7 +1039,7 @@ func createTestDatabaseWithBackups(
 	workspace *workspaces_models.Workspace,
 	owner *users_dto.SignInResponseDTO,
 	router *gin.Engine,
-) (*databases.Database, *Backup) {
+) (*databases.Database, *backups_core.Backup) {
 	database := createTestDatabase("Test Database", workspace.ID, owner.Token, router)
 	storage := createTestStorage(workspace.ID)
 
@@ -1064,7 +1065,7 @@ func createTestDatabaseWithBackups(
 func createTestBackup(
 	database *databases.Database,
 	owner *users_dto.SignInResponseDTO,
-) *Backup {
+) *backups_core.Backup {
 	userService := users_services.GetUserService()
 	user, err := userService.GetUserFromToken(owner.Token)
 	if err != nil {
@@ -1076,17 +1077,17 @@ func createTestBackup(
 		panic("No storage found for workspace")
 	}
 
-	backup := &Backup{
+	backup := &backups_core.Backup{
 		ID:               uuid.New(),
 		DatabaseID:       database.ID,
 		StorageID:        storages[0].ID,
-		Status:           BackupStatusCompleted,
+		Status:           backups_core.BackupStatusCompleted,
 		BackupSizeMb:     10.5,
 		BackupDurationMs: 1000,
 		CreatedAt:        time.Now().UTC(),
 	}
 
-	repo := &BackupRepository{}
+	repo := &backups_core.BackupRepository{}
 	if err := repo.Save(backup); err != nil {
 		panic(err)
 	}
@@ -1116,7 +1117,7 @@ func createExpiredDownloadToken(backupID, userID uuid.UUID) string {
 	}
 
 	// Manually update the token to be expired
-	repo := &download_token.DownloadTokenRepository{}
+	repo := &backups_download.DownloadTokenRepository{}
 	downloadToken, err := repo.FindByToken(token)
 	if err != nil || downloadToken == nil {
 		panic(fmt.Sprintf("Failed to find generated token: %v", err))

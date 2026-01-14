@@ -1,4 +1,4 @@
-package backups
+package backuping
 
 import (
 	"context"
@@ -8,17 +8,15 @@ import (
 	"time"
 
 	common "databasus-backend/internal/features/backups/backups/common"
+	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
-	encryption_secrets "databasus-backend/internal/features/encryption/secrets"
 	"databasus-backend/internal/features/notifiers"
 	"databasus-backend/internal/features/storages"
 	users_enums "databasus-backend/internal/features/users/enums"
 	users_testing "databasus-backend/internal/features/users/testing"
-	workspaces_services "databasus-backend/internal/features/workspaces/services"
 	workspaces_testing "databasus-backend/internal/features/workspaces/testing"
-	"databasus-backend/internal/util/encryption"
-	"databasus-backend/internal/util/logger"
+	cache_utils "databasus-backend/internal/util/cache"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -26,6 +24,7 @@ import (
 )
 
 func Test_BackupExecuted_NotificationSent(t *testing.T) {
+	cache_utils.ClearAllCache()
 	user := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
 	router := CreateTestRouter()
 	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", user, router)
@@ -50,23 +49,19 @@ func Test_BackupExecuted_NotificationSent(t *testing.T) {
 
 	t.Run("BackupFailed_FailNotificationSent", func(t *testing.T) {
 		mockNotificationSender := &MockNotificationSender{}
-		backupService := &BackupService{
-			databases.GetDatabaseService(),
-			storages.GetStorageService(),
-			backupRepository,
-			notifiers.GetNotifierService(),
-			mockNotificationSender,
-			backups_config.GetBackupConfigService(),
-			encryption_secrets.GetSecretKeyService(),
-			encryption.GetFieldEncryptor(),
-			&CreateFailedBackupUsecase{},
-			logger.GetLogger(),
-			[]BackupRemoveListener{},
-			workspaces_services.GetWorkspaceService(),
-			nil,
-			NewBackupContextManager(),
-			nil,
+		backuperNode := CreateTestBackuperNode()
+		backuperNode.notificationSender = mockNotificationSender
+		backuperNode.createBackupUseCase = &CreateFailedBackupUsecase{}
+
+		// Create a backup record directly that will be looked up by MakeBackup
+		backup := &backups_core.Backup{
+			DatabaseID: database.ID,
+			StorageID:  storage.ID,
+			Status:     backups_core.BackupStatusInProgress,
+			CreatedAt:  time.Now().UTC(),
 		}
+		err := backupRepository.Save(backup)
+		assert.NoError(t, err)
 
 		// Set up expectations
 		mockNotificationSender.On("SendNotification",
@@ -79,7 +74,7 @@ func Test_BackupExecuted_NotificationSent(t *testing.T) {
 			}),
 		).Once()
 
-		backupService.MakeBackup(database.ID, true)
+		backuperNode.MakeBackup(backup.ID, true)
 
 		// Verify all expectations were met
 		mockNotificationSender.AssertExpectations(t)
@@ -87,6 +82,19 @@ func Test_BackupExecuted_NotificationSent(t *testing.T) {
 
 	t.Run("BackupSuccess_SuccessNotificationSent", func(t *testing.T) {
 		mockNotificationSender := &MockNotificationSender{}
+		backuperNode := CreateTestBackuperNode()
+		backuperNode.notificationSender = mockNotificationSender
+		backuperNode.createBackupUseCase = &CreateSuccessBackupUsecase{}
+
+		// Create a backup record directly that will be looked up by MakeBackup
+		backup := &backups_core.Backup{
+			DatabaseID: database.ID,
+			StorageID:  storage.ID,
+			Status:     backups_core.BackupStatusInProgress,
+			CreatedAt:  time.Now().UTC(),
+		}
+		err := backupRepository.Save(backup)
+		assert.NoError(t, err)
 
 		// Set up expectations
 		mockNotificationSender.On("SendNotification",
@@ -99,25 +107,7 @@ func Test_BackupExecuted_NotificationSent(t *testing.T) {
 			}),
 		).Once()
 
-		backupService := &BackupService{
-			databases.GetDatabaseService(),
-			storages.GetStorageService(),
-			backupRepository,
-			notifiers.GetNotifierService(),
-			mockNotificationSender,
-			backups_config.GetBackupConfigService(),
-			encryption_secrets.GetSecretKeyService(),
-			encryption.GetFieldEncryptor(),
-			&CreateSuccessBackupUsecase{},
-			logger.GetLogger(),
-			[]BackupRemoveListener{},
-			workspaces_services.GetWorkspaceService(),
-			nil,
-			NewBackupContextManager(),
-			nil,
-		}
-
-		backupService.MakeBackup(database.ID, true)
+		backuperNode.MakeBackup(backup.ID, true)
 
 		// Verify all expectations were met
 		mockNotificationSender.AssertExpectations(t)
@@ -125,23 +115,19 @@ func Test_BackupExecuted_NotificationSent(t *testing.T) {
 
 	t.Run("BackupSuccess_VerifyNotificationContent", func(t *testing.T) {
 		mockNotificationSender := &MockNotificationSender{}
-		backupService := &BackupService{
-			databases.GetDatabaseService(),
-			storages.GetStorageService(),
-			backupRepository,
-			notifiers.GetNotifierService(),
-			mockNotificationSender,
-			backups_config.GetBackupConfigService(),
-			encryption_secrets.GetSecretKeyService(),
-			encryption.GetFieldEncryptor(),
-			&CreateSuccessBackupUsecase{},
-			logger.GetLogger(),
-			[]BackupRemoveListener{},
-			workspaces_services.GetWorkspaceService(),
-			nil,
-			NewBackupContextManager(),
-			nil,
+		backuperNode := CreateTestBackuperNode()
+		backuperNode.notificationSender = mockNotificationSender
+		backuperNode.createBackupUseCase = &CreateSuccessBackupUsecase{}
+
+		// Create a backup record directly that will be looked up by MakeBackup
+		backup := &backups_core.Backup{
+			DatabaseID: database.ID,
+			StorageID:  storage.ID,
+			Status:     backups_core.BackupStatusInProgress,
+			CreatedAt:  time.Now().UTC(),
 		}
+		err := backupRepository.Save(backup)
+		assert.NoError(t, err)
 
 		// capture arguments
 		var capturedNotifier *notifiers.Notifier
@@ -158,7 +144,7 @@ func Test_BackupExecuted_NotificationSent(t *testing.T) {
 			capturedMessage = args.Get(2).(string)
 		}).Once()
 
-		backupService.MakeBackup(database.ID, true)
+		backuperNode.MakeBackup(backup.ID, true)
 
 		// Verify expectations were met
 		mockNotificationSender.AssertExpectations(t)

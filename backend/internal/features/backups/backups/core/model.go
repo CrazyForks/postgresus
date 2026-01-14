@@ -1,4 +1,4 @@
-package backups
+package backups_core
 
 import (
 	backups_config "databasus-backend/internal/features/backups/config"

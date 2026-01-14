@@ -41,6 +41,10 @@ func getCache() valkey.Client {
 	return valkeyClient
 }
 
+func GetValkeyClient() valkey.Client {
+	return getCache()
+}
+
 func TestCacheConnection() {
 	// Get Valkey client from cache package
 	client := getCache()

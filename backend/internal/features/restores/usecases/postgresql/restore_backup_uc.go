@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"databasus-backend/internal/config"
-	"databasus-backend/internal/features/backups/backups"
+	backups_core "databasus-backend/internal/features/backups/backups/core"
 	"databasus-backend/internal/features/backups/backups/encryption"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
@@ -39,7 +39,7 @@ func (uc *RestorePostgresqlBackupUsecase) Execute(
 	restoringToDB *databases.Database,
 	backupConfig *backups_config.BackupConfig,
 	restore models.Restore,
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 	storage *storages.Storage,
 	isExcludeExtensions bool,
 ) error {
@@ -86,7 +86,7 @@ func (uc *RestorePostgresqlBackupUsecase) Execute(
 func (uc *RestorePostgresqlBackupUsecase) restoreCustomType(
 	originalDB *databases.Database,
 	pgBin string,
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 	storage *storages.Storage,
 	pg *pgtypes.PostgresqlDatabase,
 	isExcludeExtensions bool,
@@ -113,7 +113,7 @@ func (uc *RestorePostgresqlBackupUsecase) restoreCustomType(
 func (uc *RestorePostgresqlBackupUsecase) restoreViaStdin(
 	originalDB *databases.Database,
 	pgBin string,
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 	storage *storages.Storage,
 	pg *pgtypes.PostgresqlDatabase,
 ) error {
@@ -321,7 +321,7 @@ func (uc *RestorePostgresqlBackupUsecase) restoreViaStdin(
 func (uc *RestorePostgresqlBackupUsecase) restoreViaFile(
 	originalDB *databases.Database,
 	pgBin string,
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 	storage *storages.Storage,
 	pg *pgtypes.PostgresqlDatabase,
 	isExcludeExtensions bool,
@@ -371,7 +371,7 @@ func (uc *RestorePostgresqlBackupUsecase) restoreFromStorage(
 	pgBin string,
 	args []string,
 	password string,
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 	storage *storages.Storage,
 	pgConfig *pgtypes.PostgresqlDatabase,
 	isExcludeExtensions bool,
@@ -469,7 +469,7 @@ func (uc *RestorePostgresqlBackupUsecase) restoreFromStorage(
 // downloadBackupToTempFile downloads backup data from storage to a temporary file
 func (uc *RestorePostgresqlBackupUsecase) downloadBackupToTempFile(
 	ctx context.Context,
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 	storage *storages.Storage,
 ) (string, func(), error) {
 	// Create temporary directory for backup data

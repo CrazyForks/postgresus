@@ -1,4 +1,4 @@
-package download_token
+package backups_download
 
 import (
 	"databasus-backend/internal/util/logger"

@@ -1,4 +1,4 @@
-package backups
+package backups_core
 
 type BackupStatus string
 

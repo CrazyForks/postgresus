@@ -3,6 +3,7 @@ package restores
 import (
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/backups/backups"
+	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/disk"
@@ -36,7 +37,7 @@ type RestoreService struct {
 	diskService          *disk.DiskService
 }
 
-func (s *RestoreService) OnBeforeBackupRemove(backup *backups.Backup) error {
+func (s *RestoreService) OnBeforeBackupRemove(backup *backups_core.Backup) error {
 	restores, err := s.restoreRepository.FindByBackupID(backup.ID)
 	if err != nil {
 		return err
@@ -153,10 +154,10 @@ func (s *RestoreService) RestoreBackupWithAuth(
 }
 
 func (s *RestoreService) RestoreBackup(
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 	requestDTO RestoreBackupRequest,
 ) error {
-	if backup.Status != backups.BackupStatusCompleted {
+	if backup.Status != backups_core.BackupStatusCompleted {
 		return errors.New("backup is not completed")
 	}
 
@@ -370,7 +371,7 @@ func (s *RestoreService) validateVersionCompatibility(
 }
 
 func (s *RestoreService) validateDiskSpace(
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 	requestDTO RestoreBackupRequest,
 ) error {
 	// Only validate disk space for PostgreSQL when file-based restore is needed:

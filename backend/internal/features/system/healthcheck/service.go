@@ -1,7 +1,8 @@
 package system_healthcheck
 
 import (
-	"databasus-backend/internal/features/backups/backups"
+	"databasus-backend/internal/config"
+	"databasus-backend/internal/features/backups/backups/backuping"
 	"databasus-backend/internal/features/disk"
 	"databasus-backend/internal/storage"
 	"errors"
@@ -9,7 +10,8 @@ import (
 
 type HealthcheckService struct {
 	diskService             *disk.DiskService
-	backupBackgroundService *backups.BackupBackgroundService
+	backupBackgroundService *backuping.BackupsScheduler
+	backuperNode            *backuping.BackuperNode
 }
 
 func (s *HealthcheckService) IsHealthy() error {
@@ -29,8 +31,16 @@ func (s *HealthcheckService) IsHealthy() error {
 		return errors.New("cannot connect to the database")
 	}
 
-	if !s.backupBackgroundService.IsBackupsWorkerRunning() {
-		return errors.New("backups are not running for more than 5 minutes")
+	if config.GetEnv().IsPrimaryNode {
+		if !s.backupBackgroundService.IsSchedulerRunning() {
+			return errors.New("backups are not running for more than 5 minutes")
+		}
+	}
+
+	if config.GetEnv().IsBackupNode {
+		if !s.backuperNode.IsBackuperRunning() {
+			return errors.New("backuper node is not running for more than 5 minutes")
+		}
 	}
 
 	return nil

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"databasus-backend/internal/config"
-	"databasus-backend/internal/features/backups/backups"
+	backups_core "databasus-backend/internal/features/backups/backups/core"
 	"databasus-backend/internal/features/backups/backups/encryption"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
@@ -40,7 +40,7 @@ func (uc *RestoreMongodbBackupUsecase) Execute(
 	restoringToDB *databases.Database,
 	backupConfig *backups_config.BackupConfig,
 	restore models.Restore,
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 	storage *storages.Storage,
 ) error {
 	if originalDB.Type != databases.DatabaseTypeMongodb {
@@ -124,7 +124,7 @@ func (uc *RestoreMongodbBackupUsecase) buildMongorestoreArgs(
 func (uc *RestoreMongodbBackupUsecase) restoreFromStorage(
 	mongorestoreBin string,
 	args []string,
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 	storage *storages.Storage,
 ) error {
 	ctx, cancel := context.WithTimeout(context.Background(), restoreTimeout)
@@ -166,7 +166,7 @@ func (uc *RestoreMongodbBackupUsecase) executeMongoRestore(
 	mongorestoreBin string,
 	args []string,
 	backupReader io.ReadCloser,
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 ) error {
 	cmd := exec.CommandContext(ctx, mongorestoreBin, args...)
 
@@ -231,7 +231,7 @@ func (uc *RestoreMongodbBackupUsecase) executeMongoRestore(
 
 func (uc *RestoreMongodbBackupUsecase) setupDecryption(
 	reader io.Reader,
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 ) (io.Reader, error) {
 	if backup.EncryptionSalt == nil || backup.EncryptionIV == nil {
 		return nil, errors.New("encrypted backup missing salt or IV")

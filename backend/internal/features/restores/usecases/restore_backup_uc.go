@@ -3,7 +3,7 @@ package usecases
 import (
 	"errors"
 
-	"databasus-backend/internal/features/backups/backups"
+	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/restores/models"
@@ -26,7 +26,7 @@ func (uc *RestoreBackupUsecase) Execute(
 	restore models.Restore,
 	originalDB *databases.Database,
 	restoringToDB *databases.Database,
-	backup *backups.Backup,
+	backup *backups_core.Backup,
 	storage *storages.Storage,
 	isExcludeExtensions bool,
 ) error {

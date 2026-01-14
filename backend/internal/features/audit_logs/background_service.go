@@ -1,7 +1,7 @@
 package audit_logs
 
 import (
-	"databasus-backend/internal/config"
+	"context"
 	"log/slog"
 	"time"
 )
@@ -11,23 +11,25 @@ type AuditLogBackgroundService struct {
 	logger          *slog.Logger
 }
 
-func (s *AuditLogBackgroundService) Run() {
+func (s *AuditLogBackgroundService) Run(ctx context.Context) {
 	s.logger.Info("Starting audit log cleanup background service")
 
-	if config.IsShouldShutdown() {
+	if ctx.Err() != nil {
 		return
 	}
 
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
 	for {
-		if config.IsShouldShutdown() {
+		select {
+		case <-ctx.Done():
 			return
+		case <-ticker.C:
+			if err := s.cleanOldAuditLogs(); err != nil {
+				s.logger.Error("Failed to clean old audit logs", "error", err)
+			}
 		}
-
-		if err := s.cleanOldAuditLogs(); err != nil {
-			s.logger.Error("Failed to clean old audit logs", "error", err)
-		}
-
-		time.Sleep(1 * time.Hour)
 	}
 }
 

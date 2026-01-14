@@ -1,4 +1,4 @@
-package backups
+package backuping
 
 import (
 	"databasus-backend/internal/features/notifiers"

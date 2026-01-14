@@ -1,7 +1,7 @@
 package healthcheck_attempt
 
 import (
-	"databasus-backend/internal/config"
+	"context"
 	healthcheck_config "databasus-backend/internal/features/healthcheck/config"
 	"log/slog"
 	"time"
@@ -13,18 +13,19 @@ type HealthcheckAttemptBackgroundService struct {
 	logger                     *slog.Logger
 }
 
-func (s *HealthcheckAttemptBackgroundService) Run() {
+func (s *HealthcheckAttemptBackgroundService) Run(ctx context.Context) {
 	// first healthcheck immediately
 	s.checkDatabases()
 
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		if config.IsShouldShutdown() {
-			break
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.checkDatabases()
 		}
-
-		s.checkDatabases()
 	}
 }
 
