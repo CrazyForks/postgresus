@@ -1,6 +1,7 @@
 package backups_download
 
 import (
+	"databasus-backend/internal/config"
 	cache_utils "databasus-backend/internal/util/cache"
 	"databasus-backend/internal/util/logger"
 )
@@ -9,15 +10,29 @@ var downloadTokenRepository = &DownloadTokenRepository{}
 
 var downloadTracker = NewDownloadTracker(cache_utils.GetValkeyClient())
 
-var downloadTokenService = &DownloadTokenService{
-	downloadTokenRepository,
-	logger.GetLogger(),
-	downloadTracker,
-}
+var bandwidthManager *BandwidthManager
+var downloadTokenService *DownloadTokenService
+var downloadTokenBackgroundService *DownloadTokenBackgroundService
 
-var downloadTokenBackgroundService = &DownloadTokenBackgroundService{
-	downloadTokenService,
-	logger.GetLogger(),
+func init() {
+	env := config.GetEnv()
+	throughputMBs := env.NodeNetworkThroughputMBs
+	if throughputMBs == 0 {
+		throughputMBs = 125
+	}
+	bandwidthManager = NewBandwidthManager(throughputMBs)
+
+	downloadTokenService = &DownloadTokenService{
+		downloadTokenRepository,
+		logger.GetLogger(),
+		downloadTracker,
+		bandwidthManager,
+	}
+
+	downloadTokenBackgroundService = &DownloadTokenBackgroundService{
+		downloadTokenService,
+		logger.GetLogger(),
+	}
 }
 
 func GetDownloadTokenService() *DownloadTokenService {
@@ -26,4 +41,8 @@ func GetDownloadTokenService() *DownloadTokenService {
 
 func GetDownloadTokenBackgroundService() *DownloadTokenBackgroundService {
 	return downloadTokenBackgroundService
+}
+
+func GetBandwidthManager() *BandwidthManager {
+	return bandwidthManager
 }

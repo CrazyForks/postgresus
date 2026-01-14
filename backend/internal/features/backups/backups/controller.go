@@ -233,7 +233,7 @@ func (c *BackupController) GetFile(ctx *gin.Context) {
 		return
 	}
 
-	downloadToken, err := c.backupService.ValidateDownloadToken(token)
+	downloadToken, rateLimiter, err := c.backupService.ValidateDownloadToken(token)
 	if err != nil {
 		if err == backups_download.ErrDownloadAlreadyInProgress {
 			ctx.JSON(
@@ -258,16 +258,20 @@ func (c *BackupController) GetFile(ctx *gin.Context) {
 		downloadToken.BackupID,
 	)
 	if err != nil {
+		c.backupService.UnregisterDownload(downloadToken.UserID)
 		c.backupService.ReleaseDownloadLock(downloadToken.UserID)
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	rateLimitedReader := backups_download.NewRateLimitedReader(fileReader, rateLimiter)
+
 	heartbeatCtx, cancelHeartbeat := context.WithCancel(context.Background())
 	defer func() {
 		cancelHeartbeat()
+		c.backupService.UnregisterDownload(downloadToken.UserID)
 		c.backupService.ReleaseDownloadLock(downloadToken.UserID)
-		if err := fileReader.Close(); err != nil {
+		if err := rateLimitedReader.Close(); err != nil {
 			fmt.Printf("Error closing file reader: %v\n", err)
 		}
 	}()
@@ -287,7 +291,7 @@ func (c *BackupController) GetFile(ctx *gin.Context) {
 		fmt.Sprintf("attachment; filename=\"%s\"", filename),
 	)
 
-	_, err = io.Copy(ctx.Writer, fileReader)
+	_, err = io.Copy(ctx.Writer, rateLimitedReader)
 	if err != nil {
 		fmt.Printf("Error streaming file: %v\n", err)
 		return
