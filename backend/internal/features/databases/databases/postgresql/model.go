@@ -761,12 +761,15 @@ func checkBackupPermissions(
 	// Check SELECT privilege on at least one table (if tables exist)
 	// Use pg_tables from pg_catalog which shows all tables regardless of user privileges
 	var tableCount int
+
 	if len(includeSchemas) > 0 {
 		// Check only tables in the specified schemas
 		err = conn.QueryRow(ctx, `
 			SELECT COUNT(*)
 			FROM pg_catalog.pg_tables t
 			WHERE t.schemaname NOT IN ('pg_catalog', 'information_schema')
+			AND t.schemaname NOT LIKE 'pg_temp_%'
+			AND t.schemaname NOT LIKE 'pg_toast_temp_%'
 			AND t.schemaname = ANY($1::text[])
 		`, includeSchemas).Scan(&tableCount)
 	} else {
@@ -775,6 +778,8 @@ func checkBackupPermissions(
 			SELECT COUNT(*)
 			FROM pg_catalog.pg_tables t
 			WHERE t.schemaname NOT IN ('pg_catalog', 'information_schema')
+			AND t.schemaname NOT LIKE 'pg_temp_%'
+			AND t.schemaname NOT LIKE 'pg_toast_temp_%'
 		`).Scan(&tableCount)
 	}
 
@@ -785,12 +790,15 @@ func checkBackupPermissions(
 	if tableCount > 0 {
 		// Check if user has SELECT on at least one of these tables
 		var selectableTableCount int
+
 		if len(includeSchemas) > 0 {
 			// Check only tables in the specified schemas
 			err = conn.QueryRow(ctx, `
 				SELECT COUNT(*)
 				FROM pg_catalog.pg_tables t
 				WHERE t.schemaname NOT IN ('pg_catalog', 'information_schema')
+				AND t.schemaname NOT LIKE 'pg_temp_%'
+				AND t.schemaname NOT LIKE 'pg_toast_temp_%'
 				AND t.schemaname = ANY($1::text[])
 				AND has_table_privilege(current_user, quote_ident(t.schemaname) || '.' || quote_ident(t.tablename), 'SELECT')
 			`, includeSchemas).Scan(&selectableTableCount)
@@ -800,6 +808,8 @@ func checkBackupPermissions(
 				SELECT COUNT(*)
 				FROM pg_catalog.pg_tables t
 				WHERE t.schemaname NOT IN ('pg_catalog', 'information_schema')
+				AND t.schemaname NOT LIKE 'pg_temp_%'
+				AND t.schemaname NOT LIKE 'pg_toast_temp_%'
 				AND has_table_privilege(current_user, quote_ident(t.schemaname) || '.' || quote_ident(t.tablename), 'SELECT')
 			`).Scan(&selectableTableCount)
 		}

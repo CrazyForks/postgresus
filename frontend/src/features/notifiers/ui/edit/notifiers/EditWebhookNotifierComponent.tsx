@@ -112,6 +112,12 @@ export function EditWebhookNotifierComponent({ notifier, setNotifier, setUnsaved
           </span>
         </div>
 
+        {notifier.id && (
+          <div className="mb-1 text-xs text-orange-700">
+            *Saved headers hidden for security reasons
+          </div>
+        )}
+
         <div className="w-full max-w-[500px]">
           {headers.map((header: WebhookHeader, index: number) => (
             <div key={index} className="mb-1 flex items-center gap-2">
@@ -204,11 +210,12 @@ export function EditWebhookNotifierComponent({ notifier, setNotifier, setUnsaved
                   <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
                     Headers:
                   </div>
+
                   {headers
                     .filter((h) => h.key)
                     .map((h, i) => (
                       <div key={i} className="text-xs">
-                        {h.key}: {h.value || '(empty)'}
+                        {h.key}: {h.value || '(hidden)'}
                       </div>
                     ))}
                 </div>

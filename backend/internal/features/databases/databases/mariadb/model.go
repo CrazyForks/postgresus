@@ -515,11 +515,13 @@ func detectPrivileges(ctx context.Context, db *sql.DB, database string) (string,
 	hasProcess := false
 	hasAllPrivileges := false
 
-	escapedDB := strings.ReplaceAll(database, "_", "\\_")
-	dbPattern := regexp.MustCompile(
-		fmt.Sprintf("(?i)ON\\s+[`'\"]?(%s|\\*)[`'\"]?\\.\\*", regexp.QuoteMeta(escapedDB)),
+	dbPatternStr := fmt.Sprintf(
+		`(?i)ON\s+[\x60'"]?%s[\x60'"]?\s*\.\s*\*`,
+		regexp.QuoteMeta(database),
 	)
-	globalPattern := regexp.MustCompile(`(?i)ON\s+\*\.\*`)
+	dbPattern := regexp.MustCompile(dbPatternStr)
+	globalPattern := regexp.MustCompile(`(?i)ON\s+\*\s*\.\s*\*`)
+	allPrivilegesPattern := regexp.MustCompile(`(?i)\bALL\s+PRIVILEGES\b`)
 
 	for rows.Next() {
 		var grant string
@@ -527,23 +529,26 @@ func detectPrivileges(ctx context.Context, db *sql.DB, database string) (string,
 			return "", fmt.Errorf("failed to scan grant: %w", err)
 		}
 
-		if regexp.MustCompile(`(?i)\bALL\s+PRIVILEGES\b`).MatchString(grant) {
-			if globalPattern.MatchString(grant) || dbPattern.MatchString(grant) {
-				hasAllPrivileges = true
-			}
+		isRelevantGrant := globalPattern.MatchString(grant) || dbPattern.MatchString(grant)
+
+		if allPrivilegesPattern.MatchString(grant) && isRelevantGrant {
+			hasAllPrivileges = true
 		}
 
-		if globalPattern.MatchString(grant) || dbPattern.MatchString(grant) {
+		if isRelevantGrant {
 			for _, priv := range backupPrivileges {
-				if regexp.MustCompile(`(?i)\b` + priv + `\b`).MatchString(grant) {
+				privPattern := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(priv) + `\b`)
+				if privPattern.MatchString(grant) {
 					detectedPrivileges[priv] = true
 				}
 			}
 		}
 
-		if globalPattern.MatchString(grant) &&
-			regexp.MustCompile(`(?i)\bPROCESS\b`).MatchString(grant) {
-			hasProcess = true
+		if globalPattern.MatchString(grant) {
+			processPattern := regexp.MustCompile(`(?i)\bPROCESS\b`)
+			if processPattern.MatchString(grant) {
+				hasProcess = true
+			}
 		}
 	}
 

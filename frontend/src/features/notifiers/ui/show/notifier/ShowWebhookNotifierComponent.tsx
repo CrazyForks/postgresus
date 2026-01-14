@@ -29,7 +29,7 @@ export function ShowWebhookNotifierComponent({ notifier }: Props) {
               .filter((h: WebhookHeader) => h.key)
               .map((h: WebhookHeader, i: number) => (
                 <div key={i} className="text-gray-600">
-                  <span className="font-medium">{h.key}:</span> {h.value || '(empty)'}
+                  <span className="font-medium">{h.key}:</span> {h.value || '(hidden)'}
                 </div>
               ))}
           </div>
