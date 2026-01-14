@@ -19,6 +19,7 @@ import (
 	"databasus-backend/internal/config"
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/backups/backups"
+	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/databases/databases/mysql"
@@ -274,7 +275,7 @@ func Test_RestoreBackup_DiskSpaceValidation(t *testing.T) {
 			owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
 			workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
 
-			var backup *backups.Backup
+			var backup *backups_core.Backup
 			var request RestoreBackupRequest
 
 			if tc.dbType == databases.DatabaseTypePostgres {
@@ -321,7 +322,7 @@ func Test_RestoreBackup_DiskSpaceValidation(t *testing.T) {
 			}
 
 			// Set huge backup size (10 TB) that would fail disk validation if checked
-			repo := &backups.BackupRepository{}
+			repo := &backups_core.BackupRepository{}
 			backup.BackupSizeMb = 10485760.0
 			err := repo.Save(backup)
 			assert.NoError(t, err)
@@ -368,7 +369,7 @@ func createTestDatabaseWithBackupForRestore(
 	workspace *workspaces_models.Workspace,
 	owner *users_dto.SignInResponseDTO,
 	router *gin.Engine,
-) (*databases.Database, *backups.Backup) {
+) (*databases.Database, *backups_core.Backup) {
 	database := createTestDatabase("Test Database", workspace.ID, owner.Token, router)
 	storage := createTestStorage(workspace.ID)
 
@@ -504,7 +505,7 @@ func createTestStorage(workspaceID uuid.UUID) *storages.Storage {
 func createTestBackup(
 	database *databases.Database,
 	owner *users_dto.SignInResponseDTO,
-) *backups.Backup {
+) *backups_core.Backup {
 	fieldEncryptor := util_encryption.GetFieldEncryptor()
 	userService := users_services.GetUserService()
 	user, err := userService.GetUserFromToken(owner.Token)
@@ -517,17 +518,17 @@ func createTestBackup(
 		panic("No storage found for workspace")
 	}
 
-	backup := &backups.Backup{
+	backup := &backups_core.Backup{
 		ID:               uuid.New(),
 		DatabaseID:       database.ID,
 		StorageID:        storages[0].ID,
-		Status:           backups.BackupStatusCompleted,
+		Status:           backups_core.BackupStatusCompleted,
 		BackupSizeMb:     10.5,
 		BackupDurationMs: 1000,
 		CreatedAt:        time.Now().UTC(),
 	}
 
-	repo := &backups.BackupRepository{}
+	repo := &backups_core.BackupRepository{}
 	if err := repo.Save(backup); err != nil {
 		panic(err)
 	}

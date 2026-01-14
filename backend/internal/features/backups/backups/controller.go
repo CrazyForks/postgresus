@@ -1,6 +1,7 @@
 package backups
 
 import (
+	backups_core "databasus-backend/internal/features/backups/backups/core"
 	"databasus-backend/internal/features/databases"
 	users_middleware "databasus-backend/internal/features/users/middleware"
 	"fmt"
@@ -170,7 +171,7 @@ func (c *BackupController) CancelBackup(ctx *gin.Context) {
 // @Description Generate a token for downloading a backup file (valid for 5 minutes)
 // @Tags backups
 // @Param id path string true "Backup ID"
-// @Success 200 {object} GenerateDownloadTokenResponse
+// @Success 200 {object} backups_download.GenerateDownloadTokenResponse
 // @Failure 400
 // @Failure 401
 // @Router /backups/{id}/download-token [post]
@@ -276,7 +277,7 @@ type MakeBackupRequest struct {
 }
 
 func (c *BackupController) generateBackupFilename(
-	backup *Backup,
+	backup *backups_core.Backup,
 	database *databases.Database,
 ) string {
 	// Format timestamp as YYYY-MM-DD_HH-mm-ss

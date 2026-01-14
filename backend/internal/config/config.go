@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/joho/godotenv"
 )
@@ -28,6 +29,12 @@ type EnvVariables struct {
 	MysqlInstallDir      string            `env:"MYSQL_INSTALL_DIR"`
 	MariadbInstallDir    string            `env:"MARIADB_INSTALL_DIR"`
 	MongodbInstallDir    string            `env:"MONGODB_INSTALL_DIR"`
+
+	NodeID                   string
+	IsManyNodesMode          bool `env:"IS_MANY_NODES_MODE"`
+	IsPrimaryNode            bool `env:"IS_PRIMARY_NODE"`
+	IsBackupNode             bool `env:"IS_BACKUP_NODE"`
+	NodeNetworkThroughputMBs int  `env:"NODE_NETWORK_THROUGHPUT_MBPS"`
 
 	DataFolder    string
 	TempFolder    string
@@ -195,6 +202,16 @@ func loadEnvVariables() {
 
 	env.MongodbInstallDir = filepath.Join(backendRoot, "tools", "mongodb")
 	tools.VerifyMongodbInstallation(log, env.EnvMode, env.MongodbInstallDir)
+
+	env.NodeID = uuid.New().String()
+	if env.NodeNetworkThroughputMBs == 0 {
+		env.NodeNetworkThroughputMBs = 125 // 1 Gbit/s
+	}
+
+	if !env.IsManyNodesMode {
+		env.IsPrimaryNode = true
+		env.IsBackupNode = true
+	}
 
 	// Valkey
 	if env.ValkeyHost == "" {

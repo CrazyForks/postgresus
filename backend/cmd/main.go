@@ -15,6 +15,9 @@ import (
 	"databasus-backend/internal/config"
 	"databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/backups/backups"
+	"databasus-backend/internal/features/backups/backups/backuping"
+	backups_cancellation "databasus-backend/internal/features/backups/backups/cancellation"
+	backups_download "databasus-backend/internal/features/backups/backups/download"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/disk"
@@ -54,16 +57,23 @@ func main() {
 	log := logger.GetLogger()
 
 	cache_utils.TestCacheConnection()
-	err := cache_utils.ClearAllCache()
-	if err != nil {
-		log.Error("Failed to clear cache", "error", err)
-		os.Exit(1)
+
+	if config.GetEnv().IsPrimaryNode {
+		err := cache_utils.ClearAllCache()
+		if err != nil {
+			log.Error("Failed to clear cache", "error", err)
+			os.Exit(1)
+		}
 	}
 
-	runMigrations(log)
+	if config.GetEnv().IsPrimaryNode {
+		runMigrations(log)
+	} else {
+		log.Info("Skipping migrations (IS_PRIMARY_NODE is false)")
+	}
 
 	// create directories that used for backups and restore
-	err = files_utils.EnsureDirectories([]string{
+	err := files_utils.EnsureDirectories([]string{
 		config.GetEnv().TempFolder,
 		config.GetEnv().DataFolder,
 	})
@@ -104,7 +114,9 @@ func main() {
 	enableCors(ginApp)
 	setUpRoutes(ginApp)
 	setUpDependencies()
+
 	runBackgroundTasks(log)
+
 	mountFrontend(ginApp)
 
 	startServerWithGracefulShutdown(log, ginApp)
@@ -227,35 +239,64 @@ func setUpDependencies() {
 	notifiers.SetupDependencies()
 	storages.SetupDependencies()
 	backups_config.SetupDependencies()
+	backups_cancellation.SetupDependencies()
 }
 
 func runBackgroundTasks(log *slog.Logger) {
 	log.Info("Preparing to run background tasks...")
 
-	err := files_utils.CleanFolder(config.GetEnv().TempFolder)
-	if err != nil {
-		log.Error("Failed to clean temp folder", "error", err)
+	// Create context that will be cancelled on shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Set up signal handling for graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-quit
+		log.Info("Shutdown signal received, cancelling all background tasks")
+		cancel()
+	}()
+
+	if config.GetEnv().IsPrimaryNode {
+		log.Info("Starting primary node background tasks...")
+
+		err := files_utils.CleanFolder(config.GetEnv().TempFolder)
+		if err != nil {
+			log.Error("Failed to clean temp folder", "error", err)
+		}
+
+		go runWithPanicLogging(log, "backup background service", func() {
+			backuping.GetBackupsScheduler().Run(ctx)
+		})
+
+		go runWithPanicLogging(log, "restore background service", func() {
+			restores.GetRestoreBackgroundService().Run(ctx)
+		})
+
+		go runWithPanicLogging(log, "healthcheck attempt background service", func() {
+			healthcheck_attempt.GetHealthcheckAttemptBackgroundService().Run(ctx)
+		})
+
+		go runWithPanicLogging(log, "audit log cleanup background service", func() {
+			audit_logs.GetAuditLogBackgroundService().Run(ctx)
+		})
+
+		go runWithPanicLogging(log, "download token cleanup background service", func() {
+			backups_download.GetDownloadTokenBackgroundService().Run(ctx)
+		})
+	} else {
+		log.Info("Skipping primary node tasks as not primary node")
 	}
 
-	go runWithPanicLogging(log, "backup background service", func() {
-		backups.GetBackupBackgroundService().Run()
-	})
+	if config.GetEnv().IsBackupNode {
+		log.Info("Starting backup node background tasks...")
 
-	go runWithPanicLogging(log, "restore background service", func() {
-		restores.GetRestoreBackgroundService().Run()
-	})
-
-	go runWithPanicLogging(log, "healthcheck attempt background service", func() {
-		healthcheck_attempt.GetHealthcheckAttemptBackgroundService().Run()
-	})
-
-	go runWithPanicLogging(log, "audit log cleanup background service", func() {
-		audit_logs.GetAuditLogBackgroundService().Run()
-	})
-
-	go runWithPanicLogging(log, "download token cleanup background service", func() {
-		backups.GetDownloadTokenBackgroundService().Run()
-	})
+		go runWithPanicLogging(log, "backup node", func() {
+			backuping.GetBackuperNode().Run(ctx)
+		})
+	} else {
+		log.Info("Skipping backup node tasks as not backup node")
+	}
 }
 
 func runWithPanicLogging(log *slog.Logger, serviceName string, fn func()) {

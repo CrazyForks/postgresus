@@ -1,7 +1,7 @@
 package models
 
 import (
-	"databasus-backend/internal/features/backups/backups"
+	backups_core "databasus-backend/internal/features/backups/backups/core"
 	"databasus-backend/internal/features/restores/enums"
 	"time"
 
@@ -13,7 +13,7 @@ type Restore struct {
 	Status enums.RestoreStatus `json:"status" gorm:"column:status;type:text;not null"`
 
 	BackupID uuid.UUID `json:"backupId" gorm:"column:backup_id;type:uuid;not null"`
-	Backup   *backups.Backup
+	Backup   *backups_core.Backup
 
 	FailMessage *string `json:"failMessage" gorm:"column:fail_message"`
 

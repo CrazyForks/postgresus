@@ -19,7 +19,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"databasus-backend/internal/config"
-	"databasus-backend/internal/features/backups/backups"
+	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	mongodbtypes "databasus-backend/internal/features/databases/databases/mongodb"
@@ -161,7 +161,7 @@ func testMongodbBackupRestoreForVersion(
 	createBackupViaAPI(t, router, database.ID, user.Token)
 
 	backup := waitForBackupCompletion(t, router, database.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, backups.BackupStatusCompleted, backup.Status)
+	assert.Equal(t, backups_core.BackupStatusCompleted, backup.Status)
 
 	newDBName := "restoreddb_mongodb_" + uuid.New().String()[:8]
 
@@ -239,7 +239,7 @@ func testMongodbBackupRestoreWithEncryptionForVersion(
 	createBackupViaAPI(t, router, database.ID, user.Token)
 
 	backup := waitForBackupCompletion(t, router, database.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, backups.BackupStatusCompleted, backup.Status)
+	assert.Equal(t, backups_core.BackupStatusCompleted, backup.Status)
 	assert.Equal(t, backups_config.BackupEncryptionEncrypted, backup.Encryption)
 
 	newDBName := "restoreddb_mongodb_enc_" + uuid.New().String()[:8]
@@ -328,7 +328,7 @@ func testMongodbBackupRestoreWithReadOnlyUserForVersion(
 	createBackupViaAPI(t, router, updatedDatabase.ID, user.Token)
 
 	backup := waitForBackupCompletion(t, router, updatedDatabase.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, backups.BackupStatusCompleted, backup.Status)
+	assert.Equal(t, backups_core.BackupStatusCompleted, backup.Status)
 
 	newDBName := "restoreddb_mongodb_ro_" + uuid.New().String()[:8]
 

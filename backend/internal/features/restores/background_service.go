@@ -1,6 +1,7 @@
 package restores
 
 import (
+	"context"
 	"databasus-backend/internal/features/restores/enums"
 	"log/slog"
 )
@@ -10,7 +11,7 @@ type RestoreBackgroundService struct {
 	logger            *slog.Logger
 }
 
-func (s *RestoreBackgroundService) Run() {
+func (s *RestoreBackgroundService) Run(ctx context.Context) {
 	if err := s.failRestoresInProgress(); err != nil {
 		s.logger.Error("Failed to fail restores in progress", "error", err)
 		panic(err)

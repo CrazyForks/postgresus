@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	workspaces_controllers "databasus-backend/internal/features/workspaces/controllers"
@@ -58,9 +59,9 @@ func WaitForBackupCompletion(
 			newestBackup := backups[0]
 			t.Logf("WaitForBackupCompletion: newest backup status: %s", newestBackup.Status)
 
-			if newestBackup.Status == BackupStatusCompleted ||
-				newestBackup.Status == BackupStatusFailed ||
-				newestBackup.Status == BackupStatusCanceled {
+			if newestBackup.Status == backups_core.BackupStatusCompleted ||
+				newestBackup.Status == backups_core.BackupStatusFailed ||
+				newestBackup.Status == backups_core.BackupStatusCanceled {
 				t.Logf(
 					"WaitForBackupCompletion: backup finished with status %s",
 					newestBackup.Status,

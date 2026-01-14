@@ -1,10 +1,11 @@
 package backups
 
 import (
-	"time"
-
 	audit_logs "databasus-backend/internal/features/audit_logs"
-	"databasus-backend/internal/features/backups/backups/download_token"
+	"databasus-backend/internal/features/backups/backups/backuping"
+	backups_cancellation "databasus-backend/internal/features/backups/backups/cancellation"
+	backups_core "databasus-backend/internal/features/backups/backups/core"
+	backups_download "databasus-backend/internal/features/backups/backups/download"
 	"databasus-backend/internal/features/backups/backups/usecases"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
@@ -16,50 +17,31 @@ import (
 	"databasus-backend/internal/util/logger"
 )
 
-var backupRepository = &BackupRepository{}
+var backupRepository = &backups_core.BackupRepository{}
 
-var backupContextManager = NewBackupContextManager()
+var backupCancelManager = backups_cancellation.GetBackupCancelManager()
 
 var backupService = &BackupService{
-	databases.GetDatabaseService(),
-	storages.GetStorageService(),
-	backupRepository,
-	notifiers.GetNotifierService(),
-	notifiers.GetNotifierService(),
-	backups_config.GetBackupConfigService(),
-	encryption_secrets.GetSecretKeyService(),
-	encryption.GetFieldEncryptor(),
-	usecases.GetCreateBackupUsecase(),
-	logger.GetLogger(),
-	[]BackupRemoveListener{},
-	workspaces_services.GetWorkspaceService(),
-	audit_logs.GetAuditLogService(),
-	backupContextManager,
-	download_token.GetDownloadTokenService(),
-}
-
-var backupBackgroundService = &BackupBackgroundService{
-	backupService,
-	backupRepository,
-	backups_config.GetBackupConfigService(),
-	storages.GetStorageService(),
-	time.Now().UTC(),
-	logger.GetLogger(),
+	databaseService:        databases.GetDatabaseService(),
+	storageService:         storages.GetStorageService(),
+	backupRepository:       backupRepository,
+	notifierService:        notifiers.GetNotifierService(),
+	notificationSender:     notifiers.GetNotifierService(),
+	backupConfigService:    backups_config.GetBackupConfigService(),
+	secretKeyService:       encryption_secrets.GetSecretKeyService(),
+	fieldEncryptor:         encryption.GetFieldEncryptor(),
+	createBackupUseCase:    usecases.GetCreateBackupUsecase(),
+	logger:                 logger.GetLogger(),
+	backupRemoveListeners:  []backups_core.BackupRemoveListener{},
+	workspaceService:       workspaces_services.GetWorkspaceService(),
+	auditLogService:        audit_logs.GetAuditLogService(),
+	backupCancelManager:    backupCancelManager,
+	downloadTokenService:   backups_download.GetDownloadTokenService(),
+	backupSchedulerService: backuping.GetBackupsScheduler(),
 }
 
 var backupController = &BackupController{
-	backupService,
-}
-
-func SetupDependencies() {
-	backups_config.
-		GetBackupConfigService().
-		SetDatabaseStorageChangeListener(backupService)
-
-	databases.GetDatabaseService().AddDbRemoveListener(backupService)
-	databases.GetDatabaseService().AddDbCopyListener(backups_config.GetBackupConfigService())
-
-	backupContextManager.StartSubscription()
+	backupService: backupService,
 }
 
 func GetBackupService() *BackupService {
@@ -70,10 +52,11 @@ func GetBackupController() *BackupController {
 	return backupController
 }
 
-func GetBackupBackgroundService() *BackupBackgroundService {
-	return backupBackgroundService
-}
+func SetupDependencies() {
+	backups_config.
+		GetBackupConfigService().
+		SetDatabaseStorageChangeListener(backupService)
 
-func GetDownloadTokenBackgroundService() *download_token.DownloadTokenBackgroundService {
-	return download_token.GetDownloadTokenBackgroundService()
+	databases.GetDatabaseService().AddDbRemoveListener(backupService)
+	databases.GetDatabaseService().AddDbCopyListener(backups_config.GetBackupConfigService())
 }

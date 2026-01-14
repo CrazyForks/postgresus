@@ -1,4 +1,4 @@
-package backups
+package backups_core
 
 import (
 	"context"

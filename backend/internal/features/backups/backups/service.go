@@ -1,18 +1,17 @@
 package backups
 
 import (
-	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"slices"
-	"strings"
-	"time"
 
 	audit_logs "databasus-backend/internal/features/audit_logs"
-	"databasus-backend/internal/features/backups/backups/download_token"
+	"databasus-backend/internal/features/backups/backups/backuping"
+	backups_cancellation "databasus-backend/internal/features/backups/backups/cancellation"
+	backups_core "databasus-backend/internal/features/backups/backups/core"
+	backups_download "databasus-backend/internal/features/backups/backups/download"
 	"databasus-backend/internal/features/backups/backups/encryption"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
@@ -29,26 +28,27 @@ import (
 type BackupService struct {
 	databaseService     *databases.DatabaseService
 	storageService      *storages.StorageService
-	backupRepository    *BackupRepository
+	backupRepository    *backups_core.BackupRepository
 	notifierService     *notifiers.NotifierService
-	notificationSender  NotificationSender
+	notificationSender  backups_core.NotificationSender
 	backupConfigService *backups_config.BackupConfigService
 	secretKeyService    *encryption_secrets.SecretKeyService
 	fieldEncryptor      util_encryption.FieldEncryptor
 
-	createBackupUseCase CreateBackupUsecase
+	createBackupUseCase backups_core.CreateBackupUsecase
 
 	logger *slog.Logger
 
-	backupRemoveListeners []BackupRemoveListener
+	backupRemoveListeners []backups_core.BackupRemoveListener
 
-	workspaceService     *workspaces_services.WorkspaceService
-	auditLogService      *audit_logs.AuditLogService
-	backupContextManager *BackupContextManager
-	downloadTokenService *download_token.DownloadTokenService
+	workspaceService       *workspaces_services.WorkspaceService
+	auditLogService        *audit_logs.AuditLogService
+	backupCancelManager    *backups_cancellation.BackupCancelManager
+	downloadTokenService   *backups_download.DownloadTokenService
+	backupSchedulerService *backuping.BackupsScheduler
 }
 
-func (s *BackupService) AddBackupRemoveListener(listener BackupRemoveListener) {
+func (s *BackupService) AddBackupRemoveListener(listener backups_core.BackupRemoveListener) {
 	s.backupRemoveListeners = append(s.backupRemoveListeners, listener)
 }
 
@@ -91,7 +91,7 @@ func (s *BackupService) MakeBackupWithAuth(
 		return errors.New("insufficient permissions to create backup for this database")
 	}
 
-	go s.MakeBackup(databaseID, true)
+	s.backupSchedulerService.StartBackup(databaseID, true)
 
 	s.auditLogService.WriteAuditLog(
 		fmt.Sprintf("Backup manually initiated for database: %s", database.Name),
@@ -175,7 +175,7 @@ func (s *BackupService) DeleteBackup(
 		return errors.New("insufficient permissions to delete backup for this database")
 	}
 
-	if backup.Status == BackupStatusInProgress {
+	if backup.Status == backups_core.BackupStatusInProgress {
 		return errors.New("backup is in progress")
 	}
 
@@ -192,260 +192,7 @@ func (s *BackupService) DeleteBackup(
 	return s.deleteBackup(backup)
 }
 
-func (s *BackupService) MakeBackup(databaseID uuid.UUID, isLastTry bool) {
-	database, err := s.databaseService.GetDatabaseByID(databaseID)
-	if err != nil {
-		s.logger.Error("Failed to get database by ID", "error", err)
-		return
-	}
-
-	lastBackup, err := s.backupRepository.FindLastByDatabaseID(databaseID)
-	if err != nil {
-		s.logger.Error("Failed to find last backup by database ID", "error", err)
-		return
-	}
-
-	if lastBackup != nil && lastBackup.Status == BackupStatusInProgress {
-		s.logger.Error("Backup is in progress")
-		return
-	}
-
-	backupConfig, err := s.backupConfigService.GetBackupConfigByDbId(databaseID)
-	if err != nil {
-		s.logger.Error("Failed to get backup config by database ID", "error", err)
-		return
-	}
-
-	if backupConfig.StorageID == nil {
-		s.logger.Error("Backup config storage ID is not defined")
-		return
-	}
-
-	storage, err := s.storageService.GetStorageByID(*backupConfig.StorageID)
-	if err != nil {
-		s.logger.Error("Failed to get storage by ID", "error", err)
-		return
-	}
-
-	backup := &Backup{
-		DatabaseID: databaseID,
-		StorageID:  storage.ID,
-
-		Status: BackupStatusInProgress,
-
-		BackupSizeMb: 0,
-
-		CreatedAt: time.Now().UTC(),
-	}
-
-	if err := s.backupRepository.Save(backup); err != nil {
-		s.logger.Error("Failed to save backup", "error", err)
-		return
-	}
-
-	start := time.Now().UTC()
-
-	backupProgressListener := func(
-		completedMBs float64,
-	) {
-		backup.BackupSizeMb = completedMBs
-		backup.BackupDurationMs = time.Since(start).Milliseconds()
-
-		if err := s.backupRepository.Save(backup); err != nil {
-			s.logger.Error("Failed to update backup progress", "error", err)
-		}
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	s.backupContextManager.RegisterBackup(backup.ID, cancel)
-	defer s.backupContextManager.UnregisterBackup(backup.ID)
-
-	backupMetadata, err := s.createBackupUseCase.Execute(
-		ctx,
-		backup.ID,
-		backupConfig,
-		database,
-		storage,
-		backupProgressListener,
-	)
-	if err != nil {
-		errMsg := err.Error()
-
-		// Check if backup was cancelled (not due to shutdown)
-		isCancelled := strings.Contains(errMsg, "backup cancelled") ||
-			strings.Contains(errMsg, "context canceled") ||
-			errors.Is(err, context.Canceled)
-		isShutdown := strings.Contains(errMsg, "shutdown")
-
-		if isCancelled && !isShutdown {
-			backup.Status = BackupStatusCanceled
-			backup.BackupDurationMs = time.Since(start).Milliseconds()
-			backup.BackupSizeMb = 0
-
-			if err := s.backupRepository.Save(backup); err != nil {
-				s.logger.Error("Failed to save cancelled backup", "error", err)
-			}
-
-			// Delete partial backup from storage
-			storage, storageErr := s.storageService.GetStorageByID(backup.StorageID)
-			if storageErr == nil {
-				if deleteErr := storage.DeleteFile(s.fieldEncryptor, backup.ID); deleteErr != nil {
-					s.logger.Error(
-						"Failed to delete partial backup file",
-						"backupId",
-						backup.ID,
-						"error",
-						deleteErr,
-					)
-				}
-			}
-
-			return
-		}
-
-		backup.FailMessage = &errMsg
-		backup.Status = BackupStatusFailed
-		backup.BackupDurationMs = time.Since(start).Milliseconds()
-		backup.BackupSizeMb = 0
-
-		if updateErr := s.databaseService.SetBackupError(databaseID, errMsg); updateErr != nil {
-			s.logger.Error(
-				"Failed to update database last backup time",
-				"databaseId",
-				databaseID,
-				"error",
-				updateErr,
-			)
-		}
-
-		if err := s.backupRepository.Save(backup); err != nil {
-			s.logger.Error("Failed to save backup", "error", err)
-		}
-
-		s.SendBackupNotification(
-			backupConfig,
-			backup,
-			backups_config.NotificationBackupFailed,
-			&errMsg,
-		)
-
-		return
-	}
-
-	backup.Status = BackupStatusCompleted
-	backup.BackupDurationMs = time.Since(start).Milliseconds()
-
-	// Update backup with encryption metadata if provided
-	if backupMetadata != nil {
-		backup.EncryptionSalt = backupMetadata.EncryptionSalt
-		backup.EncryptionIV = backupMetadata.EncryptionIV
-		backup.Encryption = backupMetadata.Encryption
-	}
-
-	if err := s.backupRepository.Save(backup); err != nil {
-		s.logger.Error("Failed to save backup", "error", err)
-		return
-	}
-
-	// Update database last backup time
-	now := time.Now().UTC()
-	if updateErr := s.databaseService.SetLastBackupTime(databaseID, now); updateErr != nil {
-		s.logger.Error(
-			"Failed to update database last backup time",
-			"databaseId",
-			databaseID,
-			"error",
-			updateErr,
-		)
-	}
-
-	if backup.Status != BackupStatusCompleted && !isLastTry {
-		return
-	}
-
-	s.SendBackupNotification(
-		backupConfig,
-		backup,
-		backups_config.NotificationBackupSuccess,
-		nil,
-	)
-}
-
-func (s *BackupService) SendBackupNotification(
-	backupConfig *backups_config.BackupConfig,
-	backup *Backup,
-	notificationType backups_config.BackupNotificationType,
-	errorMessage *string,
-) {
-	database, err := s.databaseService.GetDatabaseByID(backupConfig.DatabaseID)
-	if err != nil {
-		return
-	}
-
-	workspace, err := s.workspaceService.GetWorkspaceByID(*database.WorkspaceID)
-	if err != nil {
-		return
-	}
-
-	for _, notifier := range database.Notifiers {
-		if !slices.Contains(
-			backupConfig.SendNotificationsOn,
-			notificationType,
-		) {
-			continue
-		}
-
-		title := ""
-		switch notificationType {
-		case backups_config.NotificationBackupFailed:
-			title = fmt.Sprintf(
-				"❌ Backup failed for database \"%s\" (workspace \"%s\")",
-				database.Name,
-				workspace.Name,
-			)
-		case backups_config.NotificationBackupSuccess:
-			title = fmt.Sprintf(
-				"✅ Backup completed for database \"%s\" (workspace \"%s\")",
-				database.Name,
-				workspace.Name,
-			)
-		}
-
-		message := ""
-		if errorMessage != nil {
-			message = *errorMessage
-		} else {
-			// Format size conditionally
-			var sizeStr string
-			if backup.BackupSizeMb < 1024 {
-				sizeStr = fmt.Sprintf("%.2f MB", backup.BackupSizeMb)
-			} else {
-				sizeGB := backup.BackupSizeMb / 1024
-				sizeStr = fmt.Sprintf("%.2f GB", sizeGB)
-			}
-
-			// Format duration as "0m 0s 0ms"
-			totalMs := backup.BackupDurationMs
-			minutes := totalMs / (1000 * 60)
-			seconds := (totalMs % (1000 * 60)) / 1000
-			durationStr := fmt.Sprintf("%dm %ds", minutes, seconds)
-
-			message = fmt.Sprintf(
-				"Backup completed successfully in %s.\nCompressed backup size: %s",
-				durationStr,
-				sizeStr,
-			)
-		}
-
-		s.notificationSender.SendNotification(
-			&notifier,
-			title,
-			message,
-		)
-	}
-}
-
-func (s *BackupService) GetBackup(backupID uuid.UUID) (*Backup, error) {
+func (s *BackupService) GetBackup(backupID uuid.UUID) (*backups_core.Backup, error) {
 	return s.backupRepository.FindByID(backupID)
 }
 
@@ -475,11 +222,11 @@ func (s *BackupService) CancelBackup(
 		return errors.New("insufficient permissions to cancel backup for this database")
 	}
 
-	if backup.Status != BackupStatusInProgress {
+	if backup.Status != backups_core.BackupStatusInProgress {
 		return errors.New("backup is not in progress")
 	}
 
-	if err := s.backupContextManager.CancelBackup(backupID); err != nil {
+	if err := s.backupCancelManager.CancelBackup(backupID); err != nil {
 		return err
 	}
 
@@ -499,7 +246,7 @@ func (s *BackupService) CancelBackup(
 func (s *BackupService) GetBackupFile(
 	user *users_models.User,
 	backupID uuid.UUID,
-) (io.ReadCloser, *Backup, *databases.Database, error) {
+) (io.ReadCloser, *backups_core.Backup, *databases.Database, error) {
 	backup, err := s.backupRepository.FindByID(backupID)
 	if err != nil {
 		return nil, nil, nil, err
@@ -545,7 +292,7 @@ func (s *BackupService) GetBackupFile(
 	return reader, backup, database, nil
 }
 
-func (s *BackupService) deleteBackup(backup *Backup) error {
+func (s *BackupService) deleteBackup(backup *backups_core.Backup) error {
 	for _, listener := range s.backupRemoveListeners {
 		if err := listener.OnBeforeBackupRemove(backup); err != nil {
 			return err
@@ -571,7 +318,7 @@ func (s *BackupService) deleteBackup(backup *Backup) error {
 func (s *BackupService) deleteDbBackups(databaseID uuid.UUID) error {
 	dbBackupsInProgress, err := s.backupRepository.FindByDatabaseIdAndStatus(
 		databaseID,
-		BackupStatusInProgress,
+		backups_core.BackupStatusInProgress,
 	)
 	if err != nil {
 		return err
@@ -680,16 +427,16 @@ func (s *BackupService) getBackupReader(backupID uuid.UUID) (io.ReadCloser, erro
 
 	s.logger.Info("Returning encrypted backup with decryption", "backupId", backupID)
 
-	return &decryptionReaderCloser{
-		decryptionReader,
-		fileReader,
+	return &DecryptionReaderCloser{
+		DecryptionReader: decryptionReader,
+		BaseReader:       fileReader,
 	}, nil
 }
 
 func (s *BackupService) GenerateDownloadToken(
 	user *users_models.User,
 	backupID uuid.UUID,
-) (*GenerateDownloadTokenResponse, error) {
+) (*backups_download.GenerateDownloadTokenResponse, error) {
 	backup, err := s.backupRepository.FindByID(backupID)
 	if err != nil {
 		return nil, err
@@ -725,20 +472,22 @@ func (s *BackupService) GenerateDownloadToken(
 		database.WorkspaceID,
 	)
 
-	return &GenerateDownloadTokenResponse{
+	return &backups_download.GenerateDownloadTokenResponse{
 		Token:    token,
 		Filename: filename,
 		BackupID: backupID,
 	}, nil
 }
 
-func (s *BackupService) ValidateDownloadToken(token string) (*download_token.DownloadToken, error) {
+func (s *BackupService) ValidateDownloadToken(
+	token string,
+) (*backups_download.DownloadToken, error) {
 	return s.downloadTokenService.ValidateAndConsume(token)
 }
 
 func (s *BackupService) GetBackupFileWithoutAuth(
 	backupID uuid.UUID,
-) (io.ReadCloser, *Backup, *databases.Database, error) {
+) (io.ReadCloser, *backups_core.Backup, *databases.Database, error) {
 	backup, err := s.backupRepository.FindByID(backupID)
 	if err != nil {
 		return nil, nil, nil, err
@@ -759,7 +508,7 @@ func (s *BackupService) GetBackupFileWithoutAuth(
 
 func (s *BackupService) WriteAuditLogForDownload(
 	userID uuid.UUID,
-	backup *Backup,
+	backup *backups_core.Backup,
 	database *databases.Database,
 ) {
 	s.auditLogService.WriteAuditLog(
@@ -774,7 +523,7 @@ func (s *BackupService) WriteAuditLogForDownload(
 }
 
 func (s *BackupService) generateBackupFilename(
-	backup *Backup,
+	backup *backups_core.Backup,
 	database *databases.Database,
 ) string {
 	timestamp := backup.CreatedAt.Format("2006-01-02_15-04-05")

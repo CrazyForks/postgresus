@@ -1,13 +1,14 @@
 package system_healthcheck
 
 import (
-	"databasus-backend/internal/features/backups/backups"
+	"databasus-backend/internal/features/backups/backups/backuping"
 	"databasus-backend/internal/features/disk"
 )
 
 var healthcheckService = &HealthcheckService{
 	disk.GetDiskService(),
-	backups.GetBackupBackgroundService(),
+	backuping.GetBackupsScheduler(),
+	backuping.GetBackuperNode(),
 }
 var healthcheckController = &HealthcheckController{
 	healthcheckService,
