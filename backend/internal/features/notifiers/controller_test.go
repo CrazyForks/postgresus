@@ -675,6 +675,10 @@ func Test_NotifierSensitiveDataLifecycle_AllTypes(t *testing.T) {
 					WebhookNotifier: &webhook_notifier.WebhookNotifier{
 						WebhookURL:    "https://webhook.example.com/test",
 						WebhookMethod: webhook_notifier.WebhookMethodPOST,
+						Headers: []webhook_notifier.WebhookHeader{
+							{Key: "Authorization", Value: "Bearer my-secret-token"},
+							{Key: "X-Custom-Header", Value: "custom-value"},
+						},
 					},
 				}
 			},
@@ -687,14 +691,40 @@ func Test_NotifierSensitiveDataLifecycle_AllTypes(t *testing.T) {
 					WebhookNotifier: &webhook_notifier.WebhookNotifier{
 						WebhookURL:    "https://webhook.example.com/updated",
 						WebhookMethod: webhook_notifier.WebhookMethodGET,
+						Headers: []webhook_notifier.WebhookHeader{
+							{Key: "Authorization", Value: "Bearer updated-token"},
+						},
 					},
 				}
 			},
 			verifySensitiveData: func(t *testing.T, notifier *Notifier) {
-				// No sensitive data to verify for webhook
+				assert.NotEmpty(
+					t,
+					notifier.WebhookNotifier.WebhookURL,
+					"WebhookURL should be visible",
+				)
+				// Verify header values are encrypted in DB
+				assert.True(
+					t,
+					isEncrypted(notifier.WebhookNotifier.Headers[0].Value),
+					"Header value should be encrypted in DB",
+				)
+				decrypted := decryptField(
+					t,
+					notifier.ID,
+					notifier.WebhookNotifier.Headers[0].Value,
+				)
+				assert.Equal(t, "Bearer updated-token", decrypted)
 			},
 			verifyHiddenData: func(t *testing.T, notifier *Notifier) {
-				// No sensitive data to hide for webhook
+				assert.NotEmpty(
+					t,
+					notifier.WebhookNotifier.WebhookURL,
+					"WebhookURL should be visible",
+				)
+				for _, header := range notifier.WebhookNotifier.Headers {
+					assert.Empty(t, header.Value, "Header value should be hidden")
+				}
 			},
 		},
 	}
@@ -905,7 +935,7 @@ func Test_CreateNotifier_AllSensitiveFieldsEncryptedInDB(t *testing.T) {
 			},
 		},
 		{
-			name: "Webhook Notifier - WebhookURL encrypted",
+			name: "Webhook Notifier - Header values encrypted, URL not encrypted",
 			createNotifier: func(workspaceID uuid.UUID) *Notifier {
 				return &Notifier{
 					WorkspaceID:  workspaceID,
@@ -914,17 +944,48 @@ func Test_CreateNotifier_AllSensitiveFieldsEncryptedInDB(t *testing.T) {
 					WebhookNotifier: &webhook_notifier.WebhookNotifier{
 						WebhookURL:    "https://webhook.example.com/test456",
 						WebhookMethod: webhook_notifier.WebhookMethodPOST,
+						Headers: []webhook_notifier.WebhookHeader{
+							{Key: "Authorization", Value: "Bearer secret-token-12345"},
+							{Key: "X-API-Key", Value: "api-key-67890"},
+						},
 					},
 				}
 			},
 			verifySensitiveEncryption: func(t *testing.T, notifier *Notifier) {
-				assert.True(
+				assert.False(
 					t,
 					isEncrypted(notifier.WebhookNotifier.WebhookURL),
-					"WebhookURL should be encrypted",
+					"WebhookURL should NOT be encrypted",
 				)
-				decrypted := decryptField(t, notifier.ID, notifier.WebhookNotifier.WebhookURL)
-				assert.Equal(t, "https://webhook.example.com/test456", decrypted)
+				assert.Equal(
+					t,
+					"https://webhook.example.com/test456",
+					notifier.WebhookNotifier.WebhookURL,
+				)
+
+				assert.True(
+					t,
+					isEncrypted(notifier.WebhookNotifier.Headers[0].Value),
+					"Header value should be encrypted",
+				)
+				decrypted1 := decryptField(
+					t,
+					notifier.ID,
+					notifier.WebhookNotifier.Headers[0].Value,
+				)
+				assert.Equal(t, "Bearer secret-token-12345", decrypted1)
+
+				assert.True(
+					t,
+					isEncrypted(notifier.WebhookNotifier.Headers[1].Value),
+					"Header value should be encrypted",
+				)
+				decrypted2 := decryptField(
+					t,
+					notifier.ID,
+					notifier.WebhookNotifier.Headers[1].Value,
+				)
+				assert.Equal(t, "api-key-67890", decrypted2)
 			},
 		},
 	}
