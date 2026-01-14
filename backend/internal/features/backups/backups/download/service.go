@@ -9,8 +9,9 @@ import (
 )
 
 type DownloadTokenService struct {
-	repository *DownloadTokenRepository
-	logger     *slog.Logger
+	repository      *DownloadTokenRepository
+	logger          *slog.Logger
+	downloadTracker *DownloadTracker
 }
 
 func (s *DownloadTokenService) Generate(backupID, userID uuid.UUID) (string, error) {
@@ -50,13 +51,30 @@ func (s *DownloadTokenService) ValidateAndConsume(token string) (*DownloadToken,
 		return nil, errors.New("token expired")
 	}
 
+	if err := s.downloadTracker.AcquireDownloadLock(dt.UserID); err != nil {
+		return nil, err
+	}
+
 	dt.Used = true
 	if err := s.repository.Update(dt); err != nil {
 		s.logger.Error("Failed to mark token as used", "error", err)
 	}
 
-	s.logger.Info("Token validated and consumed", "backupId", dt.BackupID)
+	s.logger.Info("Token validated and consumed", "backupId", dt.BackupID, "userId", dt.UserID)
 	return dt, nil
+}
+
+func (s *DownloadTokenService) RefreshDownloadLock(userID uuid.UUID) {
+	s.downloadTracker.RefreshDownloadLock(userID)
+}
+
+func (s *DownloadTokenService) ReleaseDownloadLock(userID uuid.UUID) {
+	s.downloadTracker.ReleaseDownloadLock(userID)
+	s.logger.Info("Released download lock", "userId", userID)
+}
+
+func (s *DownloadTokenService) IsDownloadInProgress(userID uuid.UUID) bool {
+	return s.downloadTracker.IsDownloadInProgress(userID)
 }
 
 func (s *DownloadTokenService) CleanExpiredTokens() error {

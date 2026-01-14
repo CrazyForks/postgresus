@@ -950,6 +950,107 @@ func Test_CancelBackup_InProgressBackup_SuccessfullyCancelled(t *testing.T) {
 	assert.True(t, foundCancelLog, "Cancel audit log should be created")
 }
 
+func Test_ConcurrentDownloadPrevention(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+
+	database, backup := createTestDatabaseWithBackups(workspace, owner, router)
+
+	var token1Response backups_download.GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&token1Response,
+	)
+
+	var token2Response backups_download.GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&token2Response,
+	)
+
+	downloadInProgress := make(chan bool, 1)
+	downloadComplete := make(chan bool, 1)
+
+	go func() {
+		test_utils.MakeGetRequest(
+			t,
+			router,
+			fmt.Sprintf(
+				"/api/v1/backups/%s/file?token=%s",
+				backup.ID.String(),
+				token1Response.Token,
+			),
+			"",
+			http.StatusOK,
+		)
+		downloadComplete <- true
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	service := GetBackupService()
+	if !service.IsDownloadInProgress(owner.UserID) {
+		t.Log("Warning: First download completed before we could test concurrency")
+		<-downloadComplete
+		return
+	}
+
+	downloadInProgress <- true
+
+	resp := test_utils.MakeGetRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/file?token=%s", backup.ID.String(), token2Response.Token),
+		"",
+		http.StatusConflict,
+	)
+
+	var errorResponse map[string]string
+	err := json.Unmarshal(resp.Body, &errorResponse)
+	assert.NoError(t, err)
+	assert.Contains(t, errorResponse["error"], "download already in progress")
+
+	<-downloadComplete
+	<-downloadInProgress
+
+	time.Sleep(100 * time.Millisecond)
+
+	var token3Response backups_download.GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&token3Response,
+	)
+
+	test_utils.MakeGetRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/file?token=%s", backup.ID.String(), token3Response.Token),
+		"",
+		http.StatusOK,
+	)
+
+	t.Log("Database:", database.Name)
+	t.Log(
+		"Successfully prevented concurrent downloads and allowed subsequent downloads after completion",
+	)
+}
+
 func createTestRouter() *gin.Engine {
 	return CreateTestRouter()
 }

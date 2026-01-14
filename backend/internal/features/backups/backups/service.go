@@ -522,6 +522,18 @@ func (s *BackupService) WriteAuditLogForDownload(
 	)
 }
 
+func (s *BackupService) RefreshDownloadLock(userID uuid.UUID) {
+	s.downloadTokenService.RefreshDownloadLock(userID)
+}
+
+func (s *BackupService) ReleaseDownloadLock(userID uuid.UUID) {
+	s.downloadTokenService.ReleaseDownloadLock(userID)
+}
+
+func (s *BackupService) IsDownloadInProgress(userID uuid.UUID) bool {
+	return s.downloadTokenService.IsDownloadInProgress(userID)
+}
+
 func (s *BackupService) generateBackupFilename(
 	backup *backups_core.Backup,
 	database *databases.Database,
