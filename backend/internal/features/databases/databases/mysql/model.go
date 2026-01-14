@@ -400,6 +400,7 @@ func HasPrivilege(privileges, priv string) bool {
 
 func (m *MysqlDatabase) buildDSN(password string, database string) string {
 	tlsConfig := "false"
+	allowCleartext := ""
 
 	if m.IsHttps {
 		err := mysql.RegisterTLSConfig("mysql-skip-verify", &tls.Config{
@@ -411,16 +412,18 @@ func (m *MysqlDatabase) buildDSN(password string, database string) string {
 		}
 
 		tlsConfig = "mysql-skip-verify"
+		allowCleartext = "&allowCleartextPasswords=1"
 	}
 
 	return fmt.Sprintf(
-		"%s:%s@tcp(%s:%d)/%s?parseTime=true&timeout=15s&tls=%s&charset=utf8mb4",
+		"%s:%s@tcp(%s:%d)/%s?parseTime=true&timeout=15s&tls=%s&charset=utf8mb4%s",
 		m.Username,
 		password,
 		m.Host,
 		m.Port,
 		database,
 		tlsConfig,
+		allowCleartext,
 	)
 }
 
