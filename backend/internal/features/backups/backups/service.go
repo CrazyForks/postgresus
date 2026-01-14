@@ -481,7 +481,7 @@ func (s *BackupService) GenerateDownloadToken(
 
 func (s *BackupService) ValidateDownloadToken(
 	token string,
-) (*backups_download.DownloadToken, error) {
+) (*backups_download.DownloadToken, *backups_download.RateLimiter, error) {
 	return s.downloadTokenService.ValidateAndConsume(token)
 }
 
@@ -520,6 +520,22 @@ func (s *BackupService) WriteAuditLogForDownload(
 		&userID,
 		database.WorkspaceID,
 	)
+}
+
+func (s *BackupService) RefreshDownloadLock(userID uuid.UUID) {
+	s.downloadTokenService.RefreshDownloadLock(userID)
+}
+
+func (s *BackupService) ReleaseDownloadLock(userID uuid.UUID) {
+	s.downloadTokenService.ReleaseDownloadLock(userID)
+}
+
+func (s *BackupService) IsDownloadInProgress(userID uuid.UUID) bool {
+	return s.downloadTokenService.IsDownloadInProgress(userID)
+}
+
+func (s *BackupService) UnregisterDownload(userID uuid.UUID) {
+	s.downloadTokenService.UnregisterDownload(userID)
 }
 
 func (s *BackupService) generateBackupFilename(

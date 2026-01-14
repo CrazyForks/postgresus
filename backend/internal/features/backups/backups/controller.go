@@ -1,12 +1,15 @@
 package backups
 
 import (
+	"context"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
+	backups_download "databasus-backend/internal/features/backups/backups/download"
 	"databasus-backend/internal/features/databases"
 	users_middleware "databasus-backend/internal/features/users/middleware"
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -174,6 +177,7 @@ func (c *BackupController) CancelBackup(ctx *gin.Context) {
 // @Success 200 {object} backups_download.GenerateDownloadTokenResponse
 // @Failure 400
 // @Failure 401
+// @Failure 409 {object} map[string]string "Download already in progress"
 // @Router /backups/{id}/download-token [post]
 func (c *BackupController) GenerateDownloadToken(ctx *gin.Context) {
 	user, ok := users_middleware.GetUserFromContext(ctx)
@@ -190,6 +194,15 @@ func (c *BackupController) GenerateDownloadToken(ctx *gin.Context) {
 
 	response, err := c.backupService.GenerateDownloadToken(user, id)
 	if err != nil {
+		if err == backups_download.ErrDownloadAlreadyInProgress {
+			ctx.JSON(
+				http.StatusConflict,
+				gin.H{
+					"error": "Download already in progress for some of backups. Please wait until previous download completed or cancel it",
+				},
+			)
+			return
+		}
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -199,14 +212,22 @@ func (c *BackupController) GenerateDownloadToken(ctx *gin.Context) {
 
 // GetFile
 // @Summary Download a backup file
-// @Description Download the backup file for the specified backup using a download token
+// @Description Download the backup file for the specified backup using a download token.
+// @Description
+// @Description **Download Concurrency Control:**
+// @Description - Only one download per user is allowed at a time
+// @Description - If a download is already in progress, returns 409 Conflict
+// @Description - Downloads are tracked using cache with 5-second TTL and 3-second heartbeat
+// @Description - Browser cancellations automatically release the download lock
+// @Description - Server crashes are handled via automatic cache expiry (5 seconds)
 // @Tags backups
 // @Param id path string true "Backup ID"
 // @Param token query string true "Download token"
 // @Success 200 {file} file
-// @Failure 400
-// @Failure 401
-// @Failure 500
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 409 {object} map[string]string "Download already in progress"
+// @Failure 500 {object} map[string]string
 // @Router /backups/{id}/file [get]
 func (c *BackupController) GetFile(ctx *gin.Context) {
 	token := ctx.Query("token")
@@ -215,7 +236,6 @@ func (c *BackupController) GetFile(ctx *gin.Context) {
 		return
 	}
 
-	// Get backup ID from URL
 	backupIDParam := ctx.Param("id")
 	backupID, err := uuid.Parse(backupIDParam)
 	if err != nil {
@@ -223,13 +243,22 @@ func (c *BackupController) GetFile(ctx *gin.Context) {
 		return
 	}
 
-	downloadToken, err := c.backupService.ValidateDownloadToken(token)
+	downloadToken, rateLimiter, err := c.backupService.ValidateDownloadToken(token)
 	if err != nil {
+		if err == backups_download.ErrDownloadAlreadyInProgress {
+			ctx.JSON(
+				http.StatusConflict,
+				gin.H{
+					"error": "download already in progress for this user. Please wait until previous download completed or cancel it",
+				},
+			)
+			return
+		}
+
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired download token"})
 		return
 	}
 
-	// Verify token is for the requested backup
 	if downloadToken.BackupID != backupID {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired download token"})
 		return
@@ -239,18 +268,28 @@ func (c *BackupController) GetFile(ctx *gin.Context) {
 		downloadToken.BackupID,
 	)
 	if err != nil {
+		c.backupService.UnregisterDownload(downloadToken.UserID)
+		c.backupService.ReleaseDownloadLock(downloadToken.UserID)
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	rateLimitedReader := backups_download.NewRateLimitedReader(fileReader, rateLimiter)
+
+	heartbeatCtx, cancelHeartbeat := context.WithCancel(context.Background())
 	defer func() {
-		if err := fileReader.Close(); err != nil {
+		cancelHeartbeat()
+		c.backupService.UnregisterDownload(downloadToken.UserID)
+		c.backupService.ReleaseDownloadLock(downloadToken.UserID)
+		if err := rateLimitedReader.Close(); err != nil {
 			fmt.Printf("Error closing file reader: %v\n", err)
 		}
 	}()
 
+	go c.startDownloadHeartbeat(heartbeatCtx, downloadToken.UserID)
+
 	filename := c.generateBackupFilename(backup, database)
 
-	// Set Content-Length for progress tracking
 	if backup.BackupSizeMb > 0 {
 		sizeBytes := int64(backup.BackupSizeMb * 1024 * 1024)
 		ctx.Header("Content-Length", fmt.Sprintf("%d", sizeBytes))
@@ -262,13 +301,12 @@ func (c *BackupController) GetFile(ctx *gin.Context) {
 		fmt.Sprintf("attachment; filename=\"%s\"", filename),
 	)
 
-	_, err = io.Copy(ctx.Writer, fileReader)
+	_, err = io.Copy(ctx.Writer, rateLimitedReader)
 	if err != nil {
 		fmt.Printf("Error streaming file: %v\n", err)
 		return
 	}
 
-	// Write audit log after successful download
 	c.backupService.WriteAuditLogForDownload(downloadToken.UserID, backup, database)
 }
 
@@ -333,4 +371,18 @@ func sanitizeFilename(name string) string {
 	}
 
 	return string(result)
+}
+
+func (c *BackupController) startDownloadHeartbeat(ctx context.Context, userID uuid.UUID) {
+	ticker := time.NewTicker(backups_download.GetDownloadHeartbeatInterval())
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.backupService.RefreshDownloadLock(userID)
+		}
+	}
 }

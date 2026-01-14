@@ -3,20 +3,21 @@ package users_controllers
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"databasus-backend/internal/config"
 	user_dto "databasus-backend/internal/features/users/dto"
 	users_errors "databasus-backend/internal/features/users/errors"
 	user_middleware "databasus-backend/internal/features/users/middleware"
 	users_services "databasus-backend/internal/features/users/services"
+	cache_utils "databasus-backend/internal/util/cache"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/time/rate"
 )
 
 type UserController struct {
-	userService   *users_services.UserService
-	signinLimiter *rate.Limiter
+	userService *users_services.UserService
+	rateLimiter *cache_utils.RateLimiter
 }
 
 func (c *UserController) RegisterRoutes(router *gin.RouterGroup) {
@@ -37,10 +38,6 @@ func (c *UserController) RegisterProtectedRoutes(router *gin.RouterGroup) {
 	router.PUT("/users/me", c.UpdateUserInfo)
 	router.PUT("/users/change-password", c.ChangePassword)
 	router.POST("/users/invite", c.InviteUser)
-}
-
-func (c *UserController) SetSignInLimiter(limiter *rate.Limiter) {
-	c.signinLimiter = limiter
 }
 
 // SignUp
@@ -81,18 +78,18 @@ func (c *UserController) SignUp(ctx *gin.Context) {
 // @Failure 429 {object} map[string]string "Rate limit exceeded"
 // @Router /users/signin [post]
 func (c *UserController) SignIn(ctx *gin.Context) {
-	// We use rate limiter to prevent brute force attacks
-	if !c.signinLimiter.Allow() {
+	var request user_dto.SignInRequestDTO
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+		return
+	}
+
+	allowed, _ := c.rateLimiter.CheckLimit(request.Email, "signin", 10, 1*time.Minute)
+	if !allowed {
 		ctx.JSON(
 			http.StatusTooManyRequests,
 			gin.H{"error": "Rate limit exceeded. Please try again later."},
 		)
-		return
-	}
-
-	var request user_dto.SignInRequestDTO
-	if err := ctx.ShouldBindJSON(&request); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
 		return
 	}
 

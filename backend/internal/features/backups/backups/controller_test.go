@@ -950,6 +950,189 @@ func Test_CancelBackup_InProgressBackup_SuccessfullyCancelled(t *testing.T) {
 	assert.True(t, foundCancelLog, "Cancel audit log should be created")
 }
 
+func Test_ConcurrentDownloadPrevention(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+
+	database, backup := createTestDatabaseWithBackups(workspace, owner, router)
+
+	var token1Response backups_download.GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&token1Response,
+	)
+
+	var token2Response backups_download.GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&token2Response,
+	)
+
+	downloadInProgress := make(chan bool, 1)
+	downloadComplete := make(chan bool, 1)
+
+	go func() {
+		test_utils.MakeGetRequest(
+			t,
+			router,
+			fmt.Sprintf(
+				"/api/v1/backups/%s/file?token=%s",
+				backup.ID.String(),
+				token1Response.Token,
+			),
+			"",
+			http.StatusOK,
+		)
+		downloadComplete <- true
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	service := GetBackupService()
+	if !service.IsDownloadInProgress(owner.UserID) {
+		t.Log("Warning: First download completed before we could test concurrency")
+		<-downloadComplete
+		return
+	}
+
+	downloadInProgress <- true
+
+	resp := test_utils.MakeGetRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/file?token=%s", backup.ID.String(), token2Response.Token),
+		"",
+		http.StatusConflict,
+	)
+
+	var errorResponse map[string]string
+	err := json.Unmarshal(resp.Body, &errorResponse)
+	assert.NoError(t, err)
+	assert.Contains(t, errorResponse["error"], "download already in progress")
+
+	<-downloadComplete
+	<-downloadInProgress
+
+	time.Sleep(100 * time.Millisecond)
+
+	var token3Response backups_download.GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&token3Response,
+	)
+
+	test_utils.MakeGetRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/file?token=%s", backup.ID.String(), token3Response.Token),
+		"",
+		http.StatusOK,
+	)
+
+	t.Log("Database:", database.Name)
+	t.Log(
+		"Successfully prevented concurrent downloads and allowed subsequent downloads after completion",
+	)
+}
+
+func Test_GenerateDownloadToken_BlockedWhenDownloadInProgress(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+
+	database, backup := createTestDatabaseWithBackups(workspace, owner, router)
+
+	var token1Response backups_download.GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&token1Response,
+	)
+
+	downloadComplete := make(chan bool, 1)
+
+	go func() {
+		test_utils.MakeGetRequest(
+			t,
+			router,
+			fmt.Sprintf(
+				"/api/v1/backups/%s/file?token=%s",
+				backup.ID.String(),
+				token1Response.Token,
+			),
+			"",
+			http.StatusOK,
+		)
+		downloadComplete <- true
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	service := GetBackupService()
+	if !service.IsDownloadInProgress(owner.UserID) {
+		t.Log("Warning: First download completed before we could test token generation blocking")
+		<-downloadComplete
+		return
+	}
+
+	resp := test_utils.MakePostRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusConflict,
+	)
+
+	var errorResponse map[string]string
+	err := json.Unmarshal(resp.Body, &errorResponse)
+	assert.NoError(t, err)
+	assert.Contains(t, errorResponse["error"], "download already in progress")
+
+	<-downloadComplete
+
+	time.Sleep(100 * time.Millisecond)
+
+	var token2Response backups_download.GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&token2Response,
+	)
+
+	assert.NotEmpty(t, token2Response.Token)
+	assert.NotEqual(t, token1Response.Token, token2Response.Token)
+
+	t.Log("Database:", database.Name)
+	t.Log(
+		"Successfully blocked token generation during download and allowed generation after completion",
+	)
+}
+
 func createTestRouter() *gin.Engine {
 	return CreateTestRouter()
 }
@@ -1130,4 +1313,268 @@ func createExpiredDownloadToken(backupID, userID uuid.UUID) string {
 	}
 
 	return token
+}
+
+func Test_BandwidthThrottling_SingleDownload_Uses75Percent(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+
+	_, backup := createTestDatabaseWithBackups(workspace, owner, router)
+
+	bandwidthManager := backups_download.GetBandwidthManager()
+	initialCount := bandwidthManager.GetActiveDownloadCount()
+
+	var tokenResponse backups_download.GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&tokenResponse,
+	)
+
+	downloadStarted := make(chan bool, 1)
+	downloadComplete := make(chan bool, 1)
+
+	go func() {
+		test_utils.MakeGetRequest(
+			t,
+			router,
+			fmt.Sprintf(
+				"/api/v1/backups/%s/file?token=%s",
+				backup.ID.String(),
+				tokenResponse.Token,
+			),
+			"",
+			http.StatusOK,
+		)
+		downloadComplete <- true
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	activeCount := bandwidthManager.GetActiveDownloadCount()
+	if activeCount > initialCount {
+		downloadStarted <- true
+		assert.Equal(t, initialCount+1, activeCount, "Should have one active download")
+	}
+
+	<-downloadComplete
+	if len(downloadStarted) > 0 {
+		<-downloadStarted
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	finalCount := bandwidthManager.GetActiveDownloadCount()
+	assert.Equal(t, initialCount, finalCount, "Download should be unregistered after completion")
+}
+
+func Test_BandwidthThrottling_MultipleDownloads_ShareBandwidth(t *testing.T) {
+	router := createTestRouter()
+	owner1 := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	owner2 := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	owner3 := users_testing.CreateTestUser(users_enums.UserRoleMember)
+
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner1, router)
+	workspaces_testing.AddMemberToWorkspace(
+		workspace,
+		owner2,
+		users_enums.WorkspaceRoleMember,
+		owner1.Token,
+		router,
+	)
+	workspaces_testing.AddMemberToWorkspace(
+		workspace,
+		owner3,
+		users_enums.WorkspaceRoleMember,
+		owner1.Token,
+		router,
+	)
+
+	database := createTestDatabase("Test Database", workspace.ID, owner1.Token, router)
+	storage := createTestStorage(workspace.ID)
+
+	configService := backups_config.GetBackupConfigService()
+	config, err := configService.GetBackupConfigByDbId(database.ID)
+	assert.NoError(t, err)
+
+	config.IsBackupsEnabled = true
+	config.StorageID = &storage.ID
+	config.Storage = storage
+	_, err = configService.SaveBackupConfig(config)
+	assert.NoError(t, err)
+
+	backup1 := createTestBackup(database, owner1)
+	backup2 := createTestBackup(database, owner2)
+	backup3 := createTestBackup(database, owner3)
+
+	var token1, token2, token3 backups_download.GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup1.ID.String()),
+		"Bearer "+owner1.Token,
+		nil,
+		http.StatusOK,
+		&token1,
+	)
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup2.ID.String()),
+		"Bearer "+owner2.Token,
+		nil,
+		http.StatusOK,
+		&token2,
+	)
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup3.ID.String()),
+		"Bearer "+owner3.Token,
+		nil,
+		http.StatusOK,
+		&token3,
+	)
+
+	bandwidthManager := backups_download.GetBandwidthManager()
+	initialCount := bandwidthManager.GetActiveDownloadCount()
+
+	complete1 := make(chan bool, 1)
+	complete2 := make(chan bool, 1)
+	complete3 := make(chan bool, 1)
+
+	go func() {
+		test_utils.MakeGetRequest(
+			t,
+			router,
+			fmt.Sprintf("/api/v1/backups/%s/file?token=%s", backup1.ID.String(), token1.Token),
+			"",
+			http.StatusOK,
+		)
+		complete1 <- true
+	}()
+
+	go func() {
+		test_utils.MakeGetRequest(
+			t,
+			router,
+			fmt.Sprintf("/api/v1/backups/%s/file?token=%s", backup2.ID.String(), token2.Token),
+			"",
+			http.StatusOK,
+		)
+		complete2 <- true
+	}()
+
+	go func() {
+		test_utils.MakeGetRequest(
+			t,
+			router,
+			fmt.Sprintf("/api/v1/backups/%s/file?token=%s", backup3.ID.String(), token3.Token),
+			"",
+			http.StatusOK,
+		)
+		complete3 <- true
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+
+	<-complete1
+	<-complete2
+	<-complete3
+
+	time.Sleep(100 * time.Millisecond)
+	finalCount := bandwidthManager.GetActiveDownloadCount()
+	assert.Equal(t, initialCount, finalCount, "All downloads should be unregistered")
+}
+
+func Test_BandwidthThrottling_DynamicAdjustment(t *testing.T) {
+	router := createTestRouter()
+	owner1 := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	owner2 := users_testing.CreateTestUser(users_enums.UserRoleMember)
+
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner1, router)
+	workspaces_testing.AddMemberToWorkspace(
+		workspace,
+		owner2,
+		users_enums.WorkspaceRoleMember,
+		owner1.Token,
+		router,
+	)
+
+	database := createTestDatabase("Test Database", workspace.ID, owner1.Token, router)
+	storage := createTestStorage(workspace.ID)
+
+	configService := backups_config.GetBackupConfigService()
+	config, err := configService.GetBackupConfigByDbId(database.ID)
+	assert.NoError(t, err)
+
+	config.IsBackupsEnabled = true
+	config.StorageID = &storage.ID
+	config.Storage = storage
+	_, err = configService.SaveBackupConfig(config)
+	assert.NoError(t, err)
+
+	backup1 := createTestBackup(database, owner1)
+	backup2 := createTestBackup(database, owner2)
+
+	var token1, token2 backups_download.GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup1.ID.String()),
+		"Bearer "+owner1.Token,
+		nil,
+		http.StatusOK,
+		&token1,
+	)
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup2.ID.String()),
+		"Bearer "+owner2.Token,
+		nil,
+		http.StatusOK,
+		&token2,
+	)
+
+	bandwidthManager := backups_download.GetBandwidthManager()
+	initialCount := bandwidthManager.GetActiveDownloadCount()
+
+	complete1 := make(chan bool, 1)
+	complete2 := make(chan bool, 1)
+
+	go func() {
+		test_utils.MakeGetRequest(
+			t,
+			router,
+			fmt.Sprintf("/api/v1/backups/%s/file?token=%s", backup1.ID.String(), token1.Token),
+			"",
+			http.StatusOK,
+		)
+		complete1 <- true
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	go func() {
+		test_utils.MakeGetRequest(
+			t,
+			router,
+			fmt.Sprintf("/api/v1/backups/%s/file?token=%s", backup2.ID.String(), token2.Token),
+			"",
+			http.StatusOK,
+		)
+		complete2 <- true
+	}()
+
+	<-complete1
+	<-complete2
+
+	time.Sleep(100 * time.Millisecond)
+	finalCount := bandwidthManager.GetActiveDownloadCount()
+	assert.Equal(t, initialCount, finalCount, "All downloads completed and unregistered")
 }

@@ -1146,3 +1146,48 @@ func Test_GoogleOAuth_WithInvitedUser_ActivatesUser(t *testing.T) {
 	assert.Equal(t, email, response.Email)
 	assert.False(t, response.IsNewUser)
 }
+
+func Test_SignIn_WithExcessiveAttempts_RateLimitEnforced(t *testing.T) {
+	router := createUserTestRouter()
+	email := "ratelimit" + uuid.New().String() + "@example.com"
+	password := "testpassword123"
+
+	// Create a user first
+	signupRequest := users_dto.SignUpRequestDTO{
+		Email:    email,
+		Password: password,
+		Name:     "Rate Limit Test User",
+	}
+	test_utils.MakePostRequest(t, router, "/api/v1/users/signup", "", signupRequest, http.StatusOK)
+
+	// Make 10 sign-in attempts (should succeed)
+	for range 10 {
+		signinRequest := users_dto.SignInRequestDTO{
+			Email:    email,
+			Password: password,
+		}
+		test_utils.MakePostRequest(
+			t,
+			router,
+			"/api/v1/users/signin",
+			"",
+			signinRequest,
+			http.StatusOK,
+		)
+	}
+
+	// 11th attempt should be rate limited
+	signinRequest := users_dto.SignInRequestDTO{
+		Email:    email,
+		Password: password,
+	}
+	resp := test_utils.MakePostRequest(
+		t,
+		router,
+		"/api/v1/users/signin",
+		"",
+		signinRequest,
+		http.StatusTooManyRequests,
+	)
+	assert.Contains(t, string(resp.Body), "Rate limit exceeded")
+}

@@ -14,7 +14,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/time/rate"
 )
 
 func Test_AdminLifecycleE2E_CompletesSuccessfully(t *testing.T) {
@@ -185,7 +184,6 @@ func createUserTestRouter() *gin.Engine {
 	// Register protected routes with auth middleware
 	protected := v1.Group("").Use(users_middleware.AuthMiddleware(users_services.GetUserService()))
 	GetUserController().RegisterProtectedRoutes(protected.(*gin.RouterGroup))
-	GetUserController().SetSignInLimiter(rate.NewLimiter(rate.Limit(100), 100))
 
 	// Setup audit log service
 	users_services.GetUserService().SetAuditLogWriter(&AuditLogWriterStub{})
