@@ -28,7 +28,6 @@ require (
 	github.com/valkey-io/valkey-go v1.0.70
 	go.mongodb.org/mongo-driver v1.17.6
 	golang.org/x/crypto v0.46.0
-	golang.org/x/time v0.14.0
 	gorm.io/driver/postgres v1.5.11
 	gorm.io/gorm v1.26.1
 )
@@ -186,6 +185,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	golang.org/x/term v0.38.0 // indirect
+	golang.org/x/time v0.14.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/validator.v2 v2.0.1 // indirect
 	moul.io/http2curl/v2 v2.3.0 // indirect
