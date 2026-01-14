@@ -16,6 +16,10 @@ type DownloadTokenService struct {
 }
 
 func (s *DownloadTokenService) Generate(backupID, userID uuid.UUID) (string, error) {
+	if s.downloadTracker.IsDownloadInProgress(userID) {
+		return "", ErrDownloadAlreadyInProgress
+	}
+
 	token := GenerateSecureToken()
 
 	downloadToken := &DownloadToken{

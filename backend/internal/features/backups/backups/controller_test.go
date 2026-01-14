@@ -1051,6 +1051,88 @@ func Test_ConcurrentDownloadPrevention(t *testing.T) {
 	)
 }
 
+func Test_GenerateDownloadToken_BlockedWhenDownloadInProgress(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+
+	database, backup := createTestDatabaseWithBackups(workspace, owner, router)
+
+	var token1Response backups_download.GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&token1Response,
+	)
+
+	downloadComplete := make(chan bool, 1)
+
+	go func() {
+		test_utils.MakeGetRequest(
+			t,
+			router,
+			fmt.Sprintf(
+				"/api/v1/backups/%s/file?token=%s",
+				backup.ID.String(),
+				token1Response.Token,
+			),
+			"",
+			http.StatusOK,
+		)
+		downloadComplete <- true
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	service := GetBackupService()
+	if !service.IsDownloadInProgress(owner.UserID) {
+		t.Log("Warning: First download completed before we could test token generation blocking")
+		<-downloadComplete
+		return
+	}
+
+	resp := test_utils.MakePostRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusConflict,
+	)
+
+	var errorResponse map[string]string
+	err := json.Unmarshal(resp.Body, &errorResponse)
+	assert.NoError(t, err)
+	assert.Contains(t, errorResponse["error"], "download already in progress")
+
+	<-downloadComplete
+
+	time.Sleep(100 * time.Millisecond)
+
+	var token2Response backups_download.GenerateDownloadTokenResponse
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/backups/%s/download-token", backup.ID.String()),
+		"Bearer "+owner.Token,
+		nil,
+		http.StatusOK,
+		&token2Response,
+	)
+
+	assert.NotEmpty(t, token2Response.Token)
+	assert.NotEqual(t, token1Response.Token, token2Response.Token)
+
+	t.Log("Database:", database.Name)
+	t.Log(
+		"Successfully blocked token generation during download and allowed generation after completion",
+	)
+}
+
 func createTestRouter() *gin.Engine {
 	return CreateTestRouter()
 }

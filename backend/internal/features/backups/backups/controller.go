@@ -177,6 +177,7 @@ func (c *BackupController) CancelBackup(ctx *gin.Context) {
 // @Success 200 {object} backups_download.GenerateDownloadTokenResponse
 // @Failure 400
 // @Failure 401
+// @Failure 409 {object} map[string]string "Download already in progress"
 // @Router /backups/{id}/download-token [post]
 func (c *BackupController) GenerateDownloadToken(ctx *gin.Context) {
 	user, ok := users_middleware.GetUserFromContext(ctx)
@@ -193,6 +194,15 @@ func (c *BackupController) GenerateDownloadToken(ctx *gin.Context) {
 
 	response, err := c.backupService.GenerateDownloadToken(user, id)
 	if err != nil {
+		if err == backups_download.ErrDownloadAlreadyInProgress {
+			ctx.JSON(
+				http.StatusConflict,
+				gin.H{
+					"error": "Download already in progress for some of backups. Please wait until previous download completed or cancel it",
+				},
+			)
+			return
+		}
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
