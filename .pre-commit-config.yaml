@@ -27,3 +27,10 @@ repos:
         language: system
         files: ^backend/.*\.go$
         pass_filenames: false
+
+      - id: backend-go-mod-tidy
+        name: Backend Go Mod Tidy
+        entry: bash -c "cd backend && go mod tidy"
+        language: system
+        files: ^backend/.*\.go$
+        pass_filenames: false
