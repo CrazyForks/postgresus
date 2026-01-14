@@ -21,6 +21,10 @@ type WebhookHeader struct {
 	Value string `json:"value"`
 }
 
+// Before both WebhookURL, BodyTemplate and HeadersJSON were considered
+// as sensetive data and it was causing issues. Now only headers values
+// considered as sensetive data, but we try to decrypt webhook URL and
+// body template for backward combability
 type WebhookNotifier struct {
 	NotifierID    uuid.UUID     `json:"notifierId"    gorm:"primaryKey;column:notifier_id"`
 	WebhookURL    string        `json:"webhookUrl"    gorm:"not null;column:webhook_url"`
@@ -58,6 +62,20 @@ func (t *WebhookNotifier) AfterFind(_ *gorm.DB) error {
 		}
 	}
 
+	encryptor := encryption.GetFieldEncryptor()
+
+	if t.WebhookURL != "" {
+		if decrypted, err := encryptor.Decrypt(t.NotifierID, t.WebhookURL); err == nil {
+			t.WebhookURL = decrypted
+		}
+	}
+
+	if t.BodyTemplate != nil && *t.BodyTemplate != "" {
+		if decrypted, err := encryptor.Decrypt(t.NotifierID, *t.BodyTemplate); err == nil {
+			t.BodyTemplate = &decrypted
+		}
+	}
+
 	return nil
 }
 
@@ -79,22 +97,24 @@ func (t *WebhookNotifier) Send(
 	heading string,
 	message string,
 ) error {
-	webhookURL, err := encryptor.Decrypt(t.NotifierID, t.WebhookURL)
-	if err != nil {
-		return fmt.Errorf("failed to decrypt webhook URL: %w", err)
+	if err := t.decryptHeadersForSending(encryptor); err != nil {
+		return err
 	}
 
 	switch t.WebhookMethod {
 	case WebhookMethodGET:
-		return t.sendGET(webhookURL, heading, message, logger)
+		return t.sendGET(t.WebhookURL, heading, message, logger)
 	case WebhookMethodPOST:
-		return t.sendPOST(webhookURL, heading, message, logger)
+		return t.sendPOST(t.WebhookURL, heading, message, logger)
 	default:
 		return fmt.Errorf("unsupported webhook method: %s", t.WebhookMethod)
 	}
 }
 
 func (t *WebhookNotifier) HideSensitiveData() {
+	for i := range t.Headers {
+		t.Headers[i].Value = ""
+	}
 }
 
 func (t *WebhookNotifier) Update(incoming *WebhookNotifier) {
@@ -105,14 +125,15 @@ func (t *WebhookNotifier) Update(incoming *WebhookNotifier) {
 }
 
 func (t *WebhookNotifier) EncryptSensitiveData(encryptor encryption.FieldEncryptor) error {
-	if t.WebhookURL != "" {
-		encrypted, err := encryptor.Encrypt(t.NotifierID, t.WebhookURL)
+	for i := range t.Headers {
+		if t.Headers[i].Value != "" {
+			encrypted, err := encryptor.Encrypt(t.NotifierID, t.Headers[i].Value)
+			if err != nil {
+				return fmt.Errorf("failed to encrypt header value: %w", err)
+			}
 
-		if err != nil {
-			return fmt.Errorf("failed to encrypt webhook URL: %w", err)
+			t.Headers[i].Value = encrypted
 		}
-
-		t.WebhookURL = encrypted
 	}
 
 	return nil
@@ -240,4 +261,16 @@ func escapeJSONString(s string) string {
 	}
 
 	return string(b[1 : len(b)-1])
+}
+
+func (t *WebhookNotifier) decryptHeadersForSending(encryptor encryption.FieldEncryptor) error {
+	for i := range t.Headers {
+		if t.Headers[i].Value != "" {
+			if decrypted, err := encryptor.Decrypt(t.NotifierID, t.Headers[i].Value); err == nil {
+				t.Headers[i].Value = decrypted
+			}
+		}
+	}
+
+	return nil
 }
