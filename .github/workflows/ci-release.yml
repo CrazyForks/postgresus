@@ -329,6 +329,11 @@ jobs:
             cp -r ../../assets/tools/x64/mariadb/mariadb-$version/bin mariadb/mariadb-$version/
           done
           
+          # Make all binaries executable
+          chmod +x postgresql/*/bin/*
+          chmod +x mysql/*/bin/*
+          chmod +x mariadb/*/bin/*
+          
           echo "Pre-built client tools setup complete"
 
       - name: Install MongoDB Database Tools
