@@ -3,7 +3,6 @@ package backups
 import (
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/backups/backups/backuping"
-	backups_cancellation "databasus-backend/internal/features/backups/backups/cancellation"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_download "databasus-backend/internal/features/backups/backups/download"
 	"databasus-backend/internal/features/backups/backups/usecases"
@@ -12,6 +11,7 @@ import (
 	encryption_secrets "databasus-backend/internal/features/encryption/secrets"
 	"databasus-backend/internal/features/notifiers"
 	"databasus-backend/internal/features/storages"
+	task_cancellation "databasus-backend/internal/features/tasks/cancellation"
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
 	"databasus-backend/internal/util/encryption"
 	"databasus-backend/internal/util/logger"
@@ -19,7 +19,7 @@ import (
 
 var backupRepository = &backups_core.BackupRepository{}
 
-var backupCancelManager = backups_cancellation.GetBackupCancelManager()
+var taskCancelManager = task_cancellation.GetTaskCancelManager()
 
 var backupService = &BackupService{
 	databaseService:        databases.GetDatabaseService(),
@@ -35,7 +35,7 @@ var backupService = &BackupService{
 	backupRemoveListeners:  []backups_core.BackupRemoveListener{},
 	workspaceService:       workspaces_services.GetWorkspaceService(),
 	auditLogService:        audit_logs.GetAuditLogService(),
-	backupCancelManager:    backupCancelManager,
+	taskCancelManager:      taskCancelManager,
 	downloadTokenService:   backups_download.GetDownloadTokenService(),
 	backupSchedulerService: backuping.GetBackupsScheduler(),
 }

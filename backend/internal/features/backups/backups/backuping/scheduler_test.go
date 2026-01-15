@@ -7,6 +7,7 @@ import (
 	"databasus-backend/internal/features/intervals"
 	"databasus-backend/internal/features/notifiers"
 	"databasus-backend/internal/features/storages"
+	task_registry "databasus-backend/internal/features/tasks/registry"
 	users_enums "databasus-backend/internal/features/users/enums"
 	users_testing "databasus-backend/internal/features/users/testing"
 	workspaces_testing "databasus-backend/internal/features/workspaces/testing"
@@ -42,8 +43,8 @@ func Test_RunPendingBackups_WhenLastBackupWasYesterday_CreatesNewBackup(t *testi
 
 		databases.RemoveTestDatabase(database)
 		time.Sleep(50 * time.Millisecond)
-		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
+		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
 	}()
 
@@ -111,8 +112,8 @@ func Test_RunPendingBackups_WhenLastBackupWasRecentlyCompleted_SkipsBackup(t *te
 
 		databases.RemoveTestDatabase(database)
 		time.Sleep(50 * time.Millisecond)
-		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
+		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
 	}()
 
@@ -179,8 +180,8 @@ func Test_RunPendingBackups_WhenLastBackupFailedAndRetriesDisabled_SkipsBackup(t
 
 		databases.RemoveTestDatabase(database)
 		time.Sleep(50 * time.Millisecond)
-		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
+		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
 	}()
 
@@ -251,8 +252,8 @@ func Test_RunPendingBackups_WhenLastBackupFailedAndRetriesEnabled_CreatesNewBack
 
 		databases.RemoveTestDatabase(database)
 		time.Sleep(50 * time.Millisecond)
-		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
+		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
 	}()
 
@@ -324,8 +325,8 @@ func Test_RunPendingBackups_WhenFailedBackupsExceedMaxRetries_SkipsBackup(t *tes
 
 		databases.RemoveTestDatabase(database)
 		time.Sleep(50 * time.Millisecond)
-		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
+		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
 	}()
 
@@ -396,8 +397,8 @@ func Test_RunPendingBackups_WhenBackupsDisabled_SkipsBackup(t *testing.T) {
 
 		databases.RemoveTestDatabase(database)
 		time.Sleep(50 * time.Millisecond)
-		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
+		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
 	}()
 
@@ -449,6 +450,8 @@ func Test_CheckDeadNodesAndFailBackups_WhenNodeDies_FailsBackupAndCleansUpRegist
 	notifier := notifiers.CreateTestNotifier(workspace.ID)
 	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
 
+	var mockNodeID uuid.UUID
+
 	defer func() {
 		backups, _ := backupRepository.FindByDatabaseID(database.ID)
 		for _, backup := range backups {
@@ -457,9 +460,15 @@ func Test_CheckDeadNodesAndFailBackups_WhenNodeDies_FailsBackupAndCleansUpRegist
 
 		databases.RemoveTestDatabase(database)
 		time.Sleep(50 * time.Millisecond)
-		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
+		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
+
+		// Clean up mock node
+		if mockNodeID != uuid.Nil {
+			nodesRegistry.UnregisterNodeFromRegistry(task_registry.TaskNode{ID: mockNodeID})
+		}
+		cache_utils.ClearAllCache()
 	}()
 
 	backupConfig, err := backups_config.GetBackupConfigService().GetBackupConfigByDbId(database.ID)
@@ -479,7 +488,7 @@ func Test_CheckDeadNodesAndFailBackups_WhenNodeDies_FailsBackupAndCleansUpRegist
 	assert.NoError(t, err)
 
 	// Register mock node without subscribing to backups (simulates node crash after registration)
-	mockNodeID := uuid.New()
+	mockNodeID = uuid.New()
 	err = CreateMockNodeInRegistry(mockNodeID, 100, time.Now().UTC())
 	assert.NoError(t, err)
 
@@ -493,12 +502,12 @@ func Test_CheckDeadNodesAndFailBackups_WhenNodeDies_FailsBackupAndCleansUpRegist
 	assert.Equal(t, backups_core.BackupStatusInProgress, backups[0].Status)
 
 	// Verify Valkey counter was incremented when backup was assigned
-	stats, err := nodesRegistry.GetBackupNodesStats()
+	stats, err := nodesRegistry.GetNodesStats()
 	assert.NoError(t, err)
 	foundStat := false
 	for _, stat := range stats {
 		if stat.ID == mockNodeID {
-			assert.Equal(t, 1, stat.ActiveBackups)
+			assert.Equal(t, 1, stat.ActiveTasks)
 			foundStat = true
 			break
 		}
@@ -523,19 +532,117 @@ func Test_CheckDeadNodesAndFailBackups_WhenNodeDies_FailsBackupAndCleansUpRegist
 	assert.Contains(t, *backups[0].FailMessage, "node unavailability")
 
 	// Verify Valkey counter was decremented after backup failed
-	stats, err = nodesRegistry.GetBackupNodesStats()
+	stats, err = nodesRegistry.GetNodesStats()
 	assert.NoError(t, err)
 	for _, stat := range stats {
 		if stat.ID == mockNodeID {
-			assert.Equal(t, 0, stat.ActiveBackups)
+			assert.Equal(t, 0, stat.ActiveTasks)
 		}
 	}
 
-	// Node info should still exist in registry (not removed by checkDeadNodesAndFailBackups)
-	node, err := GetNodeFromRegistry(mockNodeID)
+	time.Sleep(200 * time.Millisecond)
+}
+
+func Test_OnBackupCompleted_WhenTaskIsNotBackup_SkipsProcessing(t *testing.T) {
+	cache_utils.ClearAllCache()
+
+	user := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+	router := CreateTestRouter()
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", user, router)
+	storage := storages.CreateTestStorage(workspace.ID)
+	notifier := notifiers.CreateTestNotifier(workspace.ID)
+	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
+
+	var mockNodeID uuid.UUID
+
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		storages.RemoveTestStorage(storage.ID)
+		notifiers.RemoveTestNotifier(notifier)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+
+		// Clean up mock node
+		if mockNodeID != uuid.Nil {
+			nodesRegistry.UnregisterNodeFromRegistry(task_registry.TaskNode{ID: mockNodeID})
+		}
+		cache_utils.ClearAllCache()
+	}()
+
+	backupConfig, err := backups_config.GetBackupConfigService().GetBackupConfigByDbId(database.ID)
 	assert.NoError(t, err)
-	assert.NotNil(t, node)
-	assert.Equal(t, mockNodeID, node.ID)
+
+	timeOfDay := "04:00"
+	backupConfig.BackupInterval = &intervals.Interval{
+		Interval:  intervals.IntervalDaily,
+		TimeOfDay: &timeOfDay,
+	}
+	backupConfig.IsBackupsEnabled = true
+	backupConfig.StorePeriod = period.PeriodWeek
+	backupConfig.Storage = storage
+	backupConfig.StorageID = &storage.ID
+
+	_, err = backups_config.GetBackupConfigService().SaveBackupConfig(backupConfig)
+	assert.NoError(t, err)
+
+	// Register mock node
+	mockNodeID = uuid.New()
+	err = CreateMockNodeInRegistry(mockNodeID, 100, time.Now().UTC())
+	assert.NoError(t, err)
+
+	// Start a backup and assign it to the node
+	GetBackupsScheduler().StartBackup(database.ID, false)
+	time.Sleep(100 * time.Millisecond)
+
+	backups, err := backupRepository.FindByDatabaseID(database.ID)
+	assert.NoError(t, err)
+	assert.Len(t, backups, 1)
+	assert.Equal(t, backups_core.BackupStatusInProgress, backups[0].Status)
+
+	// Get initial state of the registry
+	initialStats, err := nodesRegistry.GetNodesStats()
+	assert.NoError(t, err)
+	var initialActiveTasks int
+	for _, stat := range initialStats {
+		if stat.ID == mockNodeID {
+			initialActiveTasks = stat.ActiveTasks
+			break
+		}
+	}
+	assert.Equal(t, 1, initialActiveTasks, "Should have 1 active task")
+
+	// Call onBackupCompleted with a random UUID (not a backup ID)
+	nonBackupTaskID := uuid.New()
+	GetBackupsScheduler().onBackupCompleted(mockNodeID.String(), nonBackupTaskID)
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify: Active tasks counter should remain the same (not decremented)
+	stats, err := nodesRegistry.GetNodesStats()
+	assert.NoError(t, err)
+	for _, stat := range stats {
+		if stat.ID == mockNodeID {
+			assert.Equal(t, initialActiveTasks, stat.ActiveTasks,
+				"Active tasks should not change for non-backup task")
+		}
+	}
+
+	// Verify: backup should still be in progress (not modified)
+	backups, err = backupRepository.FindByDatabaseID(database.ID)
+	assert.NoError(t, err)
+	assert.Len(t, backups, 1)
+	assert.Equal(t, backups_core.BackupStatusInProgress, backups[0].Status,
+		"Backup status should not change for non-backup task completion")
+
+	// Verify: backupToNodeRelations should still contain the node
+	scheduler := GetBackupsScheduler()
+	_, exists := scheduler.backupToNodeRelations[mockNodeID]
+	assert.True(t, exists, "Node should still be in backupToNodeRelations")
 
 	time.Sleep(200 * time.Millisecond)
 }
@@ -549,6 +656,14 @@ func Test_CalculateLeastBusyNode_SelectsNodeWithBestScore(t *testing.T) {
 		node3ID := uuid.New()
 		now := time.Now().UTC()
 
+		defer func() {
+			// Clean up all mock nodes
+			nodesRegistry.UnregisterNodeFromRegistry(task_registry.TaskNode{ID: node1ID})
+			nodesRegistry.UnregisterNodeFromRegistry(task_registry.TaskNode{ID: node2ID})
+			nodesRegistry.UnregisterNodeFromRegistry(task_registry.TaskNode{ID: node3ID})
+			cache_utils.ClearAllCache()
+		}()
+
 		err := CreateMockNodeInRegistry(node1ID, 100, now)
 		assert.NoError(t, err)
 		err = CreateMockNodeInRegistry(node2ID, 100, now)
@@ -557,17 +672,17 @@ func Test_CalculateLeastBusyNode_SelectsNodeWithBestScore(t *testing.T) {
 		assert.NoError(t, err)
 
 		for range 5 {
-			err = nodesRegistry.IncrementBackupsInProgress(node1ID.String())
+			err = nodesRegistry.IncrementTasksInProgress(node1ID.String())
 			assert.NoError(t, err)
 		}
 
 		for range 2 {
-			err = nodesRegistry.IncrementBackupsInProgress(node2ID.String())
+			err = nodesRegistry.IncrementTasksInProgress(node2ID.String())
 			assert.NoError(t, err)
 		}
 
 		for range 8 {
-			err = nodesRegistry.IncrementBackupsInProgress(node3ID.String())
+			err = nodesRegistry.IncrementTasksInProgress(node3ID.String())
 			assert.NoError(t, err)
 		}
 
@@ -584,17 +699,24 @@ func Test_CalculateLeastBusyNode_SelectsNodeWithBestScore(t *testing.T) {
 		node50MBsID := uuid.New()
 		now := time.Now().UTC()
 
+		defer func() {
+			// Clean up all mock nodes
+			nodesRegistry.UnregisterNodeFromRegistry(task_registry.TaskNode{ID: node100MBsID})
+			nodesRegistry.UnregisterNodeFromRegistry(task_registry.TaskNode{ID: node50MBsID})
+			cache_utils.ClearAllCache()
+		}()
+
 		err := CreateMockNodeInRegistry(node100MBsID, 100, now)
 		assert.NoError(t, err)
 		err = CreateMockNodeInRegistry(node50MBsID, 50, now)
 		assert.NoError(t, err)
 
 		for range 10 {
-			err = nodesRegistry.IncrementBackupsInProgress(node100MBsID.String())
+			err = nodesRegistry.IncrementTasksInProgress(node100MBsID.String())
 			assert.NoError(t, err)
 		}
 
-		err = nodesRegistry.IncrementBackupsInProgress(node50MBsID.String())
+		err = nodesRegistry.IncrementTasksInProgress(node50MBsID.String())
 		assert.NoError(t, err)
 
 		leastBusyNodeID, err := GetBackupsScheduler().calculateLeastBusyNode()
@@ -622,9 +744,11 @@ func Test_FailBackupsInProgress_WhenSchedulerStarts_CancelsBackupsAndUpdatesStat
 
 		databases.RemoveTestDatabase(database)
 		time.Sleep(50 * time.Millisecond)
-		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
+		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
+
+		cache_utils.ClearAllCache()
 	}()
 
 	backupConfig, err := backups_config.GetBackupConfigService().GetBackupConfigByDbId(database.ID)
@@ -704,6 +828,207 @@ func Test_FailBackupsInProgress_WhenSchedulerStarts_CancelsBackupsAndUpdatesStat
 	// Verify correct number of backups in each state
 	assert.Equal(t, 2, failedCount)
 	assert.Equal(t, 1, completedCount)
+
+	time.Sleep(200 * time.Millisecond)
+}
+
+func Test_StartBackup_WhenBackupCompletes_DecrementsActiveTaskCount(t *testing.T) {
+	cache_utils.ClearAllCache()
+
+	// Start scheduler so it can handle task completions
+	schedulerCancel := StartSchedulerForTest(t)
+	defer schedulerCancel()
+
+	backuperNode := CreateTestBackuperNode()
+	cancel := StartBackuperNodeForTest(t, backuperNode)
+	defer StopBackuperNodeForTest(t, cancel, backuperNode)
+
+	user := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+	router := CreateTestRouter()
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", user, router)
+	storage := storages.CreateTestStorage(workspace.ID)
+	notifier := notifiers.CreateTestNotifier(workspace.ID)
+	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
+
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		storages.RemoveTestStorage(storage.ID)
+		notifiers.RemoveTestNotifier(notifier)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
+
+	backupConfig, err := backups_config.GetBackupConfigService().GetBackupConfigByDbId(database.ID)
+	assert.NoError(t, err)
+
+	timeOfDay := "04:00"
+	backupConfig.BackupInterval = &intervals.Interval{
+		Interval:  intervals.IntervalDaily,
+		TimeOfDay: &timeOfDay,
+	}
+	backupConfig.IsBackupsEnabled = true
+	backupConfig.StorePeriod = period.PeriodWeek
+	backupConfig.Storage = storage
+	backupConfig.StorageID = &storage.ID
+
+	_, err = backups_config.GetBackupConfigService().SaveBackupConfig(backupConfig)
+	assert.NoError(t, err)
+
+	// Get initial active task count
+	stats, err := nodesRegistry.GetNodesStats()
+	assert.NoError(t, err)
+	var initialActiveTasks int
+	for _, stat := range stats {
+		if stat.ID == backuperNode.nodeID {
+			initialActiveTasks = stat.ActiveTasks
+			break
+		}
+	}
+	t.Logf("Initial active tasks: %d", initialActiveTasks)
+
+	// Start backup
+	GetBackupsScheduler().StartBackup(database.ID, false)
+
+	// Wait for backup to complete
+	WaitForBackupCompletion(t, database.ID, 0, 10*time.Second)
+
+	// Verify backup was created and completed
+	backups, err := backupRepository.FindByDatabaseID(database.ID)
+	assert.NoError(t, err)
+	assert.Len(t, backups, 1)
+	assert.Equal(t, backups_core.BackupStatusCompleted, backups[0].Status)
+
+	// Wait for active task count to decrease
+	decreased := WaitForActiveTasksDecrease(
+		t,
+		backuperNode.nodeID,
+		initialActiveTasks+1,
+		10*time.Second,
+	)
+	assert.True(t, decreased, "Active task count should have decreased after backup completion")
+
+	// Verify final active task count equals initial count
+	finalStats, err := nodesRegistry.GetNodesStats()
+	assert.NoError(t, err)
+	for _, stat := range finalStats {
+		if stat.ID == backuperNode.nodeID {
+			t.Logf("Final active tasks: %d", stat.ActiveTasks)
+			assert.Equal(t, initialActiveTasks, stat.ActiveTasks,
+				"Active task count should return to initial value after backup completion")
+			break
+		}
+	}
+
+	time.Sleep(200 * time.Millisecond)
+}
+
+func Test_StartBackup_WhenBackupFails_DecrementsActiveTaskCount(t *testing.T) {
+	cache_utils.ClearAllCache()
+
+	// Start scheduler so it can handle task completions
+	schedulerCancel := StartSchedulerForTest(t)
+	defer schedulerCancel()
+
+	backuperNode := CreateTestBackuperNode()
+	cancel := StartBackuperNodeForTest(t, backuperNode)
+	defer StopBackuperNodeForTest(t, cancel, backuperNode)
+
+	user := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+	router := CreateTestRouter()
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", user, router)
+	storage := storages.CreateTestStorage(workspace.ID)
+	notifier := notifiers.CreateTestNotifier(workspace.ID)
+	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
+
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		storages.RemoveTestStorage(storage.ID)
+		notifiers.RemoveTestNotifier(notifier)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
+
+	// Set wrong password to cause backup failure
+	// We need to bypass service layer validation which would fail on connection test
+	database.Postgresql.Password = "intentionally_wrong_password"
+	dbRepo := &databases.DatabaseRepository{}
+	_, err := dbRepo.Save(database)
+	assert.NoError(t, err)
+
+	backupConfig, err := backups_config.GetBackupConfigService().GetBackupConfigByDbId(database.ID)
+	assert.NoError(t, err)
+
+	timeOfDay := "04:00"
+	backupConfig.BackupInterval = &intervals.Interval{
+		Interval:  intervals.IntervalDaily,
+		TimeOfDay: &timeOfDay,
+	}
+	backupConfig.IsBackupsEnabled = true
+	backupConfig.StorePeriod = period.PeriodWeek
+	backupConfig.Storage = storage
+	backupConfig.StorageID = &storage.ID
+
+	_, err = backups_config.GetBackupConfigService().SaveBackupConfig(backupConfig)
+	assert.NoError(t, err)
+
+	// Get initial active task count
+	stats, err := nodesRegistry.GetNodesStats()
+	assert.NoError(t, err)
+	var initialActiveTasks int
+	for _, stat := range stats {
+		if stat.ID == backuperNode.nodeID {
+			initialActiveTasks = stat.ActiveTasks
+			break
+		}
+	}
+	t.Logf("Initial active tasks: %d", initialActiveTasks)
+
+	// Start backup
+	GetBackupsScheduler().StartBackup(database.ID, false)
+
+	// Wait for backup to fail
+	WaitForBackupCompletion(t, database.ID, 0, 10*time.Second)
+
+	// Verify backup was created and failed
+	backups, err := backupRepository.FindByDatabaseID(database.ID)
+	assert.NoError(t, err)
+	assert.Len(t, backups, 1)
+	assert.Equal(t, backups_core.BackupStatusFailed, backups[0].Status)
+	assert.NotNil(t, backups[0].FailMessage)
+	if backups[0].FailMessage != nil {
+		t.Logf("Backup failed with message: %s", *backups[0].FailMessage)
+	}
+
+	// Wait for active task count to decrease
+	decreased := WaitForActiveTasksDecrease(
+		t,
+		backuperNode.nodeID,
+		initialActiveTasks+1,
+		10*time.Second,
+	)
+	assert.True(t, decreased, "Active task count should have decreased after backup failure")
+
+	// Verify final active task count equals initial count
+	finalStats, err := nodesRegistry.GetNodesStats()
+	assert.NoError(t, err)
+	for _, stat := range finalStats {
+		if stat.ID == backuperNode.nodeID {
+			t.Logf("Final active tasks: %d", stat.ActiveTasks)
+			assert.Equal(t, initialActiveTasks, stat.ActiveTasks,
+				"Active task count should return to initial value after backup failure")
+			break
+		}
+	}
 
 	time.Sleep(200 * time.Millisecond)
 }

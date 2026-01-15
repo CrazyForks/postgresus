@@ -19,16 +19,6 @@ jobs:
         with:
           go-version: "1.24.9"
 
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('backend/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
       - name: Install golangci-lint
         run: |
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.7.2
@@ -63,8 +53,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
         run: |
@@ -93,8 +81,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
         run: |
@@ -135,16 +121,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.24.9"
-
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('backend/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
 
       - name: Create .env file for testing
         run: |
@@ -321,34 +297,6 @@ jobs:
           mkdir -p databasus-data/backups
           mkdir -p databasus-data/temp
 
-      - name: Cache PostgreSQL client tools
-        id: cache-postgres
-        uses: actions/cache@v4
-        with:
-          path: /usr/lib/postgresql
-          key: postgres-clients-12-18-v1
-
-      - name: Cache MySQL client tools
-        id: cache-mysql
-        uses: actions/cache@v4
-        with:
-          path: backend/tools/mysql
-          key: mysql-clients-57-80-84-9-v1
-
-      - name: Cache MariaDB client tools
-        id: cache-mariadb
-        uses: actions/cache@v4
-        with:
-          path: backend/tools/mariadb
-          key: mariadb-clients-106-121-v1
-
-      - name: Cache MongoDB Database Tools
-        id: cache-mongodb
-        uses: actions/cache@v4
-        with:
-          path: backend/tools/mongodb
-          key: mongodb-database-tools-100.10.0-v1
-
       - name: Install MySQL dependencies
         run: |
           sudo apt-get update -qq
@@ -356,31 +304,53 @@ jobs:
           sudo ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5
           sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5
 
-      - name: Install PostgreSQL, MySQL, MariaDB and MongoDB client tools
-        if: steps.cache-postgres.outputs.cache-hit != 'true' || steps.cache-mysql.outputs.cache-hit != 'true' || steps.cache-mariadb.outputs.cache-hit != 'true' || steps.cache-mongodb.outputs.cache-hit != 'true'
-        run: |
-          chmod +x backend/tools/download_linux.sh
-          cd backend/tools
-          ./download_linux.sh
-
-      - name: Setup PostgreSQL symlinks (when using cache)
-        if: steps.cache-postgres.outputs.cache-hit == 'true'
+      - name: Setup PostgreSQL, MySQL and MariaDB client tools from pre-built assets
         run: |
           cd backend/tools
-          mkdir -p postgresql
+          
+          # Create directory structure
+          mkdir -p postgresql mysql mariadb mongodb/bin
+          
+          # Copy PostgreSQL client tools (12-18) from pre-built assets
           for version in 12 13 14 15 16 17 18; do
-            version_dir="postgresql/postgresql-$version"
-            mkdir -p "$version_dir/bin"
-            pg_bin_dir="/usr/lib/postgresql/$version/bin"
-            if [ -d "$pg_bin_dir" ]; then
-              ln -sf "$pg_bin_dir/pg_dump" "$version_dir/bin/pg_dump"
-              ln -sf "$pg_bin_dir/pg_dumpall" "$version_dir/bin/pg_dumpall"
-              ln -sf "$pg_bin_dir/psql" "$version_dir/bin/psql"
-              ln -sf "$pg_bin_dir/pg_restore" "$version_dir/bin/pg_restore"
-              ln -sf "$pg_bin_dir/createdb" "$version_dir/bin/createdb"
-              ln -sf "$pg_bin_dir/dropdb" "$version_dir/bin/dropdb"
-            fi
+            mkdir -p postgresql/postgresql-$version
+            cp -r ../../assets/tools/x64/postgresql/postgresql-$version/bin postgresql/postgresql-$version/
           done
+          
+          # Copy MySQL client tools (5.7, 8.0, 8.4, 9) from pre-built assets
+          for version in 5.7 8.0 8.4 9; do
+            mkdir -p mysql/mysql-$version
+            cp -r ../../assets/tools/x64/mysql/mysql-$version/bin mysql/mysql-$version/
+          done
+          
+          # Copy MariaDB client tools (10.6, 12.1) from pre-built assets
+          for version in 10.6 12.1; do
+            mkdir -p mariadb/mariadb-$version
+            cp -r ../../assets/tools/x64/mariadb/mariadb-$version/bin mariadb/mariadb-$version/
+          done
+          
+          echo "Pre-built client tools setup complete"
+
+      - name: Install MongoDB Database Tools
+        run: |
+          cd backend/tools
+          
+          # MongoDB Database Tools must be downloaded (not in pre-built assets)
+          # They are backward compatible - single version supports all servers (4.0-8.0)
+          MONGODB_TOOLS_URL="https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian12-x86_64-100.10.0.deb"
+          
+          echo "Downloading MongoDB Database Tools..."
+          wget -q "$MONGODB_TOOLS_URL" -O /tmp/mongodb-database-tools.deb
+          
+          echo "Installing MongoDB Database Tools..."
+          sudo dpkg -i /tmp/mongodb-database-tools.deb || sudo apt-get install -f -y --no-install-recommends
+          
+          # Create symlinks to tools directory
+          ln -sf /usr/bin/mongodump mongodb/bin/mongodump
+          ln -sf /usr/bin/mongorestore mongodb/bin/mongorestore
+          
+          rm -f /tmp/mongodb-database-tools.deb
+          echo "MongoDB Database Tools installed successfully"
 
       - name: Verify MariaDB client tools exist
         run: |

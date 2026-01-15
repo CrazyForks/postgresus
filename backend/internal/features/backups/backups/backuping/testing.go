@@ -12,6 +12,7 @@ import (
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/notifiers"
 	"databasus-backend/internal/features/storages"
+	task_registry "databasus-backend/internal/features/tasks/registry"
 	workspaces_controllers "databasus-backend/internal/features/workspaces/controllers"
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
 	workspaces_testing "databasus-backend/internal/features/workspaces/testing"
@@ -42,7 +43,7 @@ func CreateTestBackuperNode() *BackuperNode {
 		backups_config.GetBackupConfigService(),
 		storages.GetStorageService(),
 		notifiers.GetNotifierService(),
-		backupCancelManager,
+		taskCancelManager,
 		nodesRegistry,
 		logger.GetLogger(),
 		usecases.GetCreateBackupUsecase(),
@@ -138,6 +139,34 @@ func StartBackuperNodeForTest(t *testing.T, backuperNode *BackuperNode) context.
 	return nil
 }
 
+// StartSchedulerForTest starts the BackupsScheduler in a goroutine for testing.
+// The scheduler subscribes to task completions and manages backup lifecycle.
+// Returns a context cancel function that should be deferred to stop the scheduler.
+func StartSchedulerForTest(t *testing.T) context.CancelFunc {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+
+	go func() {
+		GetBackupsScheduler().Run(ctx)
+		close(done)
+	}()
+
+	// Give scheduler time to subscribe to completions
+	time.Sleep(100 * time.Millisecond)
+	t.Log("BackupsScheduler started")
+
+	return func() {
+		cancel()
+		select {
+		case <-done:
+			t.Log("BackupsScheduler stopped gracefully")
+		case <-time.After(2 * time.Second):
+			t.Log("BackupsScheduler stop timeout")
+		}
+	}
+}
+
 // StopBackuperNodeForTest stops the BackuperNode by canceling its context.
 // It waits for the node to unregister from the registry.
 func StopBackuperNodeForTest(t *testing.T, cancel context.CancelFunc, backuperNode *BackuperNode) {
@@ -167,7 +196,7 @@ func StopBackuperNodeForTest(t *testing.T, cancel context.CancelFunc, backuperNo
 }
 
 func CreateMockNodeInRegistry(nodeID uuid.UUID, throughputMBs int, lastHeartbeat time.Time) error {
-	backupNode := BackupNode{
+	backupNode := task_registry.TaskNode{
 		ID:            nodeID,
 		ThroughputMBs: throughputMBs,
 		LastHeartbeat: lastHeartbeat,
@@ -181,7 +210,7 @@ func UpdateNodeHeartbeatDirectly(
 	throughputMBs int,
 	lastHeartbeat time.Time,
 ) error {
-	backupNode := BackupNode{
+	backupNode := task_registry.TaskNode{
 		ID:            nodeID,
 		ThroughputMBs: throughputMBs,
 		LastHeartbeat: lastHeartbeat,
@@ -190,7 +219,7 @@ func UpdateNodeHeartbeatDirectly(
 	return nodesRegistry.HearthbeatNodeInRegistry(lastHeartbeat, backupNode)
 }
 
-func GetNodeFromRegistry(nodeID uuid.UUID) (*BackupNode, error) {
+func GetNodeFromRegistry(nodeID uuid.UUID) (*task_registry.TaskNode, error) {
 	nodes, err := nodesRegistry.GetAvailableNodes()
 	if err != nil {
 		return nil, err
@@ -203,4 +232,49 @@ func GetNodeFromRegistry(nodeID uuid.UUID) (*BackupNode, error) {
 	}
 
 	return nil, fmt.Errorf("node not found")
+}
+
+// WaitForActiveTasksDecrease waits for the active task count to decrease below the initial count.
+// It polls the registry every 500ms until the count decreases or the timeout is reached.
+// Returns true if the count decreased, false if timeout was reached.
+func WaitForActiveTasksDecrease(
+	t *testing.T,
+	nodeID uuid.UUID,
+	initialCount int,
+	timeout time.Duration,
+) bool {
+	deadline := time.Now().UTC().Add(timeout)
+
+	for time.Now().UTC().Before(deadline) {
+		stats, err := nodesRegistry.GetNodesStats()
+		if err != nil {
+			t.Logf("WaitForActiveTasksDecrease: error getting node stats: %v", err)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		for _, stat := range stats {
+			if stat.ID == nodeID {
+				t.Logf(
+					"WaitForActiveTasksDecrease: current active tasks = %d (initial = %d)",
+					stat.ActiveTasks,
+					initialCount,
+				)
+				if stat.ActiveTasks < initialCount {
+					t.Logf(
+						"WaitForActiveTasksDecrease: active tasks decreased from %d to %d",
+						initialCount,
+						stat.ActiveTasks,
+					)
+					return true
+				}
+				break
+			}
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	t.Logf("WaitForActiveTasksDecrease: timeout waiting for active tasks to decrease")
+	return false
 }

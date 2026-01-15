@@ -85,6 +85,27 @@ func (p *PostgresqlDatabase) Validate() error {
 		return errors.New("cpu count must be greater than 0")
 	}
 
+	// Prevent Databasus from backing up itself
+	// Databasus runs an internal PostgreSQL instance that should not be backed up through the UI
+	// because it would expose internal metadata to non-system administrators.
+	// To properly backup Databasus, see: https://databasus.com/faq#backup-databasus
+	if p.Database != nil && *p.Database != "" {
+		localhostHosts := []string{"localhost", "127.0.0.1", "172.17.0.1", "host.docker.internal"}
+		isLocalhost := false
+		for _, host := range localhostHosts {
+			if strings.EqualFold(p.Host, host) {
+				isLocalhost = true
+				break
+			}
+		}
+
+		if isLocalhost && strings.EqualFold(*p.Database, "databasus") {
+			return errors.New(
+				"backing up Databasus internal database is not allowed. To backup Databasus itself, see https://databasus.com/faq#backup-databasus",
+			)
+		}
+	}
+
 	return nil
 }
 

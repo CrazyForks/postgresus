@@ -705,6 +705,233 @@ func Test_CreateReadOnlyUser_Supabase_UserCanReadButNotWrite(t *testing.T) {
 	assert.Contains(t, err.Error(), "permission denied")
 }
 
+func Test_Validate_WhenLocalhostAndDatabasus_ReturnsError(t *testing.T) {
+	testCases := []struct {
+		name     string
+		host     string
+		username string
+		database string
+	}{
+		{
+			name:     "localhost with databasus db",
+			host:     "localhost",
+			username: "postgres",
+			database: "databasus",
+		},
+		{
+			name:     "127.0.0.1 with databasus db",
+			host:     "127.0.0.1",
+			username: "postgres",
+			database: "databasus",
+		},
+		{
+			name:     "172.17.0.1 with databasus db",
+			host:     "172.17.0.1",
+			username: "postgres",
+			database: "databasus",
+		},
+		{
+			name:     "host.docker.internal with databasus db",
+			host:     "host.docker.internal",
+			username: "postgres",
+			database: "databasus",
+		},
+		{
+			name:     "LOCALHOST (uppercase) with DATABASUS db",
+			host:     "LOCALHOST",
+			username: "POSTGRES",
+			database: "DATABASUS",
+		},
+		{
+			name:     "LocalHost (mixed case) with DataBasus db",
+			host:     "LocalHost",
+			username: "anyuser",
+			database: "DataBasus",
+		},
+		{
+			name:     "localhost with databasus and any username",
+			host:     "localhost",
+			username: "myuser",
+			database: "databasus",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			pgModel := &PostgresqlDatabase{
+				Host:     tc.host,
+				Port:     5437,
+				Username: tc.username,
+				Password: "somepassword",
+				Database: &tc.database,
+				CpuCount: 1,
+			}
+
+			err := pgModel.Validate()
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "backing up Databasus internal database is not allowed")
+			assert.Contains(t, err.Error(), "https://databasus.com/faq#backup-databasus")
+		})
+	}
+}
+
+func Test_Validate_WhenNotLocalhostOrNotDatabasus_ValidatesSuccessfully(t *testing.T) {
+	testCases := []struct {
+		name     string
+		host     string
+		username string
+		database string
+	}{
+		{
+			name:     "different host (remote server) with databasus db",
+			host:     "192.168.1.100",
+			username: "postgres",
+			database: "databasus",
+		},
+		{
+			name:     "different database name on localhost",
+			host:     "localhost",
+			username: "postgres",
+			database: "myapp",
+		},
+		{
+			name:     "all different",
+			host:     "db.example.com",
+			username: "appuser",
+			database: "production",
+		},
+		{
+			name:     "localhost with postgres database",
+			host:     "localhost",
+			username: "postgres",
+			database: "postgres",
+		},
+		{
+			name:     "remote host with databasus db name (allowed)",
+			host:     "db.example.com",
+			username: "postgres",
+			database: "databasus",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			pgModel := &PostgresqlDatabase{
+				Host:     tc.host,
+				Port:     5432,
+				Username: tc.username,
+				Password: "somepassword",
+				Database: &tc.database,
+				CpuCount: 1,
+			}
+
+			err := pgModel.Validate()
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func Test_Validate_WhenDatabaseIsNil_ValidatesSuccessfully(t *testing.T) {
+	pgModel := &PostgresqlDatabase{
+		Host:     "localhost",
+		Port:     5437,
+		Username: "postgres",
+		Password: "somepassword",
+		Database: nil,
+		CpuCount: 1,
+	}
+
+	err := pgModel.Validate()
+	assert.NoError(t, err)
+}
+
+func Test_Validate_WhenDatabaseIsEmpty_ValidatesSuccessfully(t *testing.T) {
+	emptyDb := ""
+	pgModel := &PostgresqlDatabase{
+		Host:     "localhost",
+		Port:     5437,
+		Username: "postgres",
+		Password: "somepassword",
+		Database: &emptyDb,
+		CpuCount: 1,
+	}
+
+	err := pgModel.Validate()
+	assert.NoError(t, err)
+}
+
+func Test_Validate_WhenRequiredFieldsMissing_ReturnsError(t *testing.T) {
+	testCases := []struct {
+		name          string
+		model         *PostgresqlDatabase
+		expectedError string
+	}{
+		{
+			name: "missing host",
+			model: &PostgresqlDatabase{
+				Host:     "",
+				Port:     5432,
+				Username: "user",
+				Password: "pass",
+				CpuCount: 1,
+			},
+			expectedError: "host is required",
+		},
+		{
+			name: "missing port",
+			model: &PostgresqlDatabase{
+				Host:     "localhost",
+				Port:     0,
+				Username: "user",
+				Password: "pass",
+				CpuCount: 1,
+			},
+			expectedError: "port is required",
+		},
+		{
+			name: "missing username",
+			model: &PostgresqlDatabase{
+				Host:     "localhost",
+				Port:     5432,
+				Username: "",
+				Password: "pass",
+				CpuCount: 1,
+			},
+			expectedError: "username is required",
+		},
+		{
+			name: "missing password",
+			model: &PostgresqlDatabase{
+				Host:     "localhost",
+				Port:     5432,
+				Username: "user",
+				Password: "",
+				CpuCount: 1,
+			},
+			expectedError: "password is required",
+		},
+		{
+			name: "invalid cpu count",
+			model: &PostgresqlDatabase{
+				Host:     "localhost",
+				Port:     5432,
+				Username: "user",
+				Password: "pass",
+				CpuCount: 0,
+			},
+			expectedError: "cpu count must be greater than 0",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.model.Validate()
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tc.expectedError)
+		})
+	}
+}
+
 type PostgresContainer struct {
 	Host     string
 	Port     int
