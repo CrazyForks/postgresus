@@ -53,13 +53,16 @@ func VerifyMongodbInstallation(
 	logger *slog.Logger,
 	envMode env_utils.EnvMode,
 	mongodbInstallDir string,
+	isShowLogs bool,
 ) {
 	binDir := getMongodbBasePath(envMode, mongodbInstallDir)
 
-	logger.Info(
-		"Verifying MongoDB Database Tools installation",
-		"path", binDir,
-	)
+	if isShowLogs {
+		logger.Info(
+			"Verifying MongoDB Database Tools installation",
+			"path", binDir,
+		)
+	}
 
 	if _, err := os.Stat(binDir); os.IsNotExist(err) {
 		if envMode == env_utils.EnvModeDevelopment {
@@ -85,11 +88,13 @@ func VerifyMongodbInstallation(
 	for _, cmd := range requiredCommands {
 		cmdPath := GetMongodbExecutable(cmd, envMode, mongodbInstallDir)
 
-		logger.Info(
-			"Checking for MongoDB command",
-			"command", cmd,
-			"path", cmdPath,
-		)
+		if isShowLogs {
+			logger.Info(
+				"Checking for MongoDB command",
+				"command", cmd,
+				"path", cmdPath,
+			)
+		}
 
 		if _, err := os.Stat(cmdPath); os.IsNotExist(err) {
 			if envMode == env_utils.EnvModeDevelopment {
@@ -110,10 +115,14 @@ func VerifyMongodbInstallation(
 			continue
 		}
 
-		logger.Info("MongoDB command found", "command", cmd)
+		if isShowLogs {
+			logger.Info("MongoDB command found", "command", cmd)
+		}
 	}
 
-	logger.Info("MongoDB Database Tools verification completed!")
+	if isShowLogs {
+		logger.Info("MongoDB Database Tools verification completed!")
+	}
 }
 
 // IsMongodbBackupVersionHigherThanRestoreVersion checks if backup was made with

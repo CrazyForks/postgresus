@@ -1,4 +1,4 @@
-package backups_cancellation
+package task_cancellation
 
 import (
 	"context"
@@ -9,17 +9,17 @@ import (
 	"github.com/google/uuid"
 )
 
-var backupCancelManager = &BackupCancelManager{
+var taskCancelManager = &TaskCancelManager{
 	sync.RWMutex{},
 	make(map[uuid.UUID]context.CancelFunc),
 	cache_utils.NewPubSubManager(),
 	logger.GetLogger(),
 }
 
-func GetBackupCancelManager() *BackupCancelManager {
-	return backupCancelManager
+func GetTaskCancelManager() *TaskCancelManager {
+	return taskCancelManager
 }
 
 func SetupDependencies() {
-	backupCancelManager.StartSubscription()
+	taskCancelManager.StartSubscription()
 }

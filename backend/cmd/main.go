@@ -16,7 +16,6 @@ import (
 	"databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/backups/backups"
 	"databasus-backend/internal/features/backups/backups/backuping"
-	backups_cancellation "databasus-backend/internal/features/backups/backups/cancellation"
 	backups_download "databasus-backend/internal/features/backups/backups/download"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
@@ -28,6 +27,8 @@ import (
 	"databasus-backend/internal/features/restores"
 	"databasus-backend/internal/features/storages"
 	system_healthcheck "databasus-backend/internal/features/system/healthcheck"
+	task_cancellation "databasus-backend/internal/features/tasks/cancellation"
+	task_registry "databasus-backend/internal/features/tasks/registry"
 	users_controllers "databasus-backend/internal/features/users/controllers"
 	users_middleware "databasus-backend/internal/features/users/middleware"
 	users_services "databasus-backend/internal/features/users/services"
@@ -59,6 +60,8 @@ func main() {
 	cache_utils.TestCacheConnection()
 
 	if config.GetEnv().IsPrimaryNode {
+		log.Info("Clearing cache...")
+
 		err := cache_utils.ClearAllCache()
 		if err != nil {
 			log.Error("Failed to clear cache", "error", err)
@@ -239,7 +242,7 @@ func setUpDependencies() {
 	notifiers.SetupDependencies()
 	storages.SetupDependencies()
 	backups_config.SetupDependencies()
-	backups_cancellation.SetupDependencies()
+	task_cancellation.SetupDependencies()
 }
 
 func runBackgroundTasks(log *slog.Logger) {
@@ -257,13 +260,13 @@ func runBackgroundTasks(log *slog.Logger) {
 		cancel()
 	}()
 
+	err := files_utils.CleanFolder(config.GetEnv().TempFolder)
+	if err != nil {
+		log.Error("Failed to clean temp folder", "error", err)
+	}
+
 	if config.GetEnv().IsPrimaryNode {
 		log.Info("Starting primary node background tasks...")
-
-		err := files_utils.CleanFolder(config.GetEnv().TempFolder)
-		if err != nil {
-			log.Error("Failed to clean temp folder", "error", err)
-		}
 
 		go runWithPanicLogging(log, "backup background service", func() {
 			backuping.GetBackupsScheduler().Run(ctx)
@@ -283,6 +286,10 @@ func runBackgroundTasks(log *slog.Logger) {
 
 		go runWithPanicLogging(log, "download token cleanup background service", func() {
 			backups_download.GetDownloadTokenBackgroundService().Run(ctx)
+		})
+
+		go runWithPanicLogging(log, "task nodes registry background service", func() {
+			task_registry.GetTaskNodesRegistry().Run(ctx)
 		})
 	} else {
 		log.Info("Skipping primary node tasks as not primary node")

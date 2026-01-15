@@ -55,6 +55,7 @@ func VerifyMysqlInstallation(
 	logger *slog.Logger,
 	envMode env_utils.EnvMode,
 	mysqlInstallDir string,
+	isShowLogs bool,
 ) {
 	versions := []MysqlVersion{
 		MysqlVersion57,
@@ -71,13 +72,15 @@ func VerifyMysqlInstallation(
 	for _, version := range versions {
 		binDir := getMysqlBasePath(version, envMode, mysqlInstallDir)
 
-		logger.Info(
-			"Verifying MySQL installation",
-			"version",
-			string(version),
-			"path",
-			binDir,
-		)
+		if isShowLogs {
+			logger.Info(
+				"Verifying MySQL installation",
+				"version",
+				string(version),
+				"path",
+				binDir,
+			)
+		}
 
 		if _, err := os.Stat(binDir); os.IsNotExist(err) {
 			if envMode == env_utils.EnvModeDevelopment {
@@ -108,15 +111,17 @@ func VerifyMysqlInstallation(
 				mysqlInstallDir,
 			)
 
-			logger.Info(
-				"Checking for MySQL command",
-				"command",
-				cmd,
-				"version",
-				string(version),
-				"path",
-				cmdPath,
-			)
+			if isShowLogs {
+				logger.Info(
+					"Checking for MySQL command",
+					"command",
+					cmd,
+					"version",
+					string(version),
+					"path",
+					cmdPath,
+				)
+			}
 
 			if _, err := os.Stat(cmdPath); os.IsNotExist(err) {
 				if envMode == env_utils.EnvModeDevelopment {
@@ -143,25 +148,31 @@ func VerifyMysqlInstallation(
 				continue
 			}
 
-			logger.Info(
-				"MySQL command found",
-				"command",
-				cmd,
-				"version",
-				string(version),
-			)
+			if isShowLogs {
+				logger.Info(
+					"MySQL command found",
+					"command",
+					cmd,
+					"version",
+					string(version),
+				)
+			}
 		}
 
-		logger.Info(
-			"Installation of MySQL verified",
-			"version",
-			string(version),
-			"path",
-			binDir,
-		)
+		if isShowLogs {
+			logger.Info(
+				"Installation of MySQL verified",
+				"version",
+				string(version),
+				"path",
+				binDir,
+			)
+		}
 	}
 
-	logger.Info("MySQL version-specific client tools verification completed!")
+	if isShowLogs {
+		logger.Info("MySQL version-specific client tools verification completed!")
+	}
 }
 
 // IsMysqlBackupVersionHigherThanRestoreVersion checks if backup was made with

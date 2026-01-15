@@ -40,6 +40,7 @@ func VerifyPostgresesInstallation(
 	logger *slog.Logger,
 	envMode env_utils.EnvMode,
 	postgresesInstallDir string,
+	isShowLogs bool,
 ) {
 	versions := []PostgresqlVersion{
 		PostgresqlVersion12,
@@ -59,13 +60,15 @@ func VerifyPostgresesInstallation(
 	for _, version := range versions {
 		binDir := getPostgresqlBasePath(version, envMode, postgresesInstallDir)
 
-		logger.Info(
-			"Verifying PostgreSQL installation",
-			"version",
-			string(version),
-			"path",
-			binDir,
-		)
+		if isShowLogs {
+			logger.Info(
+				"Verifying PostgreSQL installation",
+				"version",
+				string(version),
+				"path",
+				binDir,
+			)
+		}
 
 		if _, err := os.Stat(binDir); os.IsNotExist(err) {
 			if envMode == env_utils.EnvModeDevelopment {
@@ -96,15 +99,17 @@ func VerifyPostgresesInstallation(
 				postgresesInstallDir,
 			)
 
-			logger.Info(
-				"Checking for PostgreSQL command",
-				"command",
-				cmd,
-				"version",
-				string(version),
-				"path",
-				cmdPath,
-			)
+			if isShowLogs {
+				logger.Info(
+					"Checking for PostgreSQL command",
+					"command",
+					cmd,
+					"version",
+					string(version),
+					"path",
+					cmdPath,
+				)
+			}
 
 			if _, err := os.Stat(cmdPath); os.IsNotExist(err) {
 				if envMode == env_utils.EnvModeDevelopment {
@@ -131,25 +136,33 @@ func VerifyPostgresesInstallation(
 				os.Exit(1)
 			}
 
-			logger.Info(
-				"PostgreSQL command found",
-				"command",
-				cmd,
-				"version",
-				string(version),
-			)
+			if isShowLogs {
+				logger.Info(
+					"PostgreSQL command found",
+					"command",
+					cmd,
+					"version",
+					string(version),
+				)
+			}
 		}
 
-		logger.Info(
-			"Installation of PostgreSQL verified",
-			"version",
-			string(version),
-			"path",
-			binDir,
-		)
+		if isShowLogs {
+			logger.Info(
+				"Installation of PostgreSQL verified",
+				"version",
+				string(version),
+				"path",
+				binDir,
+			)
+		}
 	}
 
-	logger.Info("All PostgreSQL version-specific client tools verification completed successfully!")
+	if isShowLogs {
+		logger.Info(
+			"All PostgreSQL version-specific client tools verification completed successfully!",
+		)
+	}
 }
 
 // EscapePgpassField escapes special characters in a field value for .pgpass file format.

@@ -9,7 +9,6 @@ import (
 
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/backups/backups/backuping"
-	backups_cancellation "databasus-backend/internal/features/backups/backups/cancellation"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_download "databasus-backend/internal/features/backups/backups/download"
 	"databasus-backend/internal/features/backups/backups/encryption"
@@ -18,6 +17,7 @@ import (
 	encryption_secrets "databasus-backend/internal/features/encryption/secrets"
 	"databasus-backend/internal/features/notifiers"
 	"databasus-backend/internal/features/storages"
+	task_cancellation "databasus-backend/internal/features/tasks/cancellation"
 	users_models "databasus-backend/internal/features/users/models"
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
 	util_encryption "databasus-backend/internal/util/encryption"
@@ -43,7 +43,7 @@ type BackupService struct {
 
 	workspaceService       *workspaces_services.WorkspaceService
 	auditLogService        *audit_logs.AuditLogService
-	backupCancelManager    *backups_cancellation.BackupCancelManager
+	taskCancelManager      *task_cancellation.TaskCancelManager
 	downloadTokenService   *backups_download.DownloadTokenService
 	backupSchedulerService *backuping.BackupsScheduler
 }
@@ -226,7 +226,7 @@ func (s *BackupService) CancelBackup(
 		return errors.New("backup is not in progress")
 	}
 
-	if err := s.backupCancelManager.CancelBackup(backupID); err != nil {
+	if err := s.taskCancelManager.CancelTask(backupID); err != nil {
 		return err
 	}
 

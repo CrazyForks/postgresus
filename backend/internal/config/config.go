@@ -30,6 +30,8 @@ type EnvVariables struct {
 	MariadbInstallDir    string            `env:"MARIADB_INSTALL_DIR"`
 	MongodbInstallDir    string            `env:"MONGODB_INSTALL_DIR"`
 
+	ShowDbInstallationVerificationLogs bool `env:"SHOW_DB_INSTALLATION_VERIFICATION_LOGS"`
+
 	NodeID                   string
 	IsManyNodesMode          bool `env:"IS_MANY_NODES_MODE"`
 	IsPrimaryNode            bool `env:"IS_PRIMARY_NODE"`
@@ -169,6 +171,11 @@ func loadEnvVariables() {
 		os.Exit(1)
 	}
 
+	// Set default value for ShowDbInstallationVerificationLogs if not defined
+	if os.Getenv("SHOW_DB_INSTALLATION_VERIFICATION_LOGS") == "" {
+		env.ShowDbInstallationVerificationLogs = true
+	}
+
 	for _, arg := range os.Args {
 		if strings.Contains(arg, "test") {
 			env.IsTesting = true
@@ -192,16 +199,36 @@ func loadEnvVariables() {
 	log.Info("ENV_MODE loaded", "mode", env.EnvMode)
 
 	env.PostgresesInstallDir = filepath.Join(backendRoot, "tools", "postgresql")
-	tools.VerifyPostgresesInstallation(log, env.EnvMode, env.PostgresesInstallDir)
+	tools.VerifyPostgresesInstallation(
+		log,
+		env.EnvMode,
+		env.PostgresesInstallDir,
+		env.ShowDbInstallationVerificationLogs,
+	)
 
 	env.MysqlInstallDir = filepath.Join(backendRoot, "tools", "mysql")
-	tools.VerifyMysqlInstallation(log, env.EnvMode, env.MysqlInstallDir)
+	tools.VerifyMysqlInstallation(
+		log,
+		env.EnvMode,
+		env.MysqlInstallDir,
+		env.ShowDbInstallationVerificationLogs,
+	)
 
 	env.MariadbInstallDir = filepath.Join(backendRoot, "tools", "mariadb")
-	tools.VerifyMariadbInstallation(log, env.EnvMode, env.MariadbInstallDir)
+	tools.VerifyMariadbInstallation(
+		log,
+		env.EnvMode,
+		env.MariadbInstallDir,
+		env.ShowDbInstallationVerificationLogs,
+	)
 
 	env.MongodbInstallDir = filepath.Join(backendRoot, "tools", "mongodb")
-	tools.VerifyMongodbInstallation(log, env.EnvMode, env.MongodbInstallDir)
+	tools.VerifyMongodbInstallation(
+		log,
+		env.EnvMode,
+		env.MongodbInstallDir,
+		env.ShowDbInstallationVerificationLogs,
+	)
 
 	env.NodeID = uuid.New().String()
 	if env.NodeNetworkThroughputMBs == 0 {

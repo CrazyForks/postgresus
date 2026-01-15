@@ -87,17 +87,20 @@ func VerifyMariadbInstallation(
 	logger *slog.Logger,
 	envMode env_utils.EnvMode,
 	mariadbInstallDir string,
+	isShowLogs bool,
 ) {
 	clientVersions := []MariadbClientVersion{MariadbClientLegacy, MariadbClientModern}
 
 	for _, clientVersion := range clientVersions {
 		binDir := getMariadbBasePath(clientVersion, envMode, mariadbInstallDir)
 
-		logger.Info(
-			"Verifying MariaDB installation",
-			"clientVersion", clientVersion,
-			"path", binDir,
-		)
+		if isShowLogs {
+			logger.Info(
+				"Verifying MariaDB installation",
+				"clientVersion", clientVersion,
+				"path", binDir,
+			)
+		}
 
 		if _, err := os.Stat(binDir); os.IsNotExist(err) {
 			if envMode == env_utils.EnvModeDevelopment {
@@ -133,12 +136,14 @@ func VerifyMariadbInstallation(
 			}
 			cmdPath := GetMariadbExecutable(cmd, dummyServerVersion, envMode, mariadbInstallDir)
 
-			logger.Info(
-				"Checking for MariaDB command",
-				"clientVersion", clientVersion,
-				"command", cmd,
-				"path", cmdPath,
-			)
+			if isShowLogs {
+				logger.Info(
+					"Checking for MariaDB command",
+					"clientVersion", clientVersion,
+					"command", cmd,
+					"path", cmdPath,
+				)
+			}
 
 			if _, err := os.Stat(cmdPath); os.IsNotExist(err) {
 				if envMode == env_utils.EnvModeDevelopment {
@@ -162,11 +167,15 @@ func VerifyMariadbInstallation(
 				continue
 			}
 
-			logger.Info("MariaDB command found", "clientVersion", clientVersion, "command", cmd)
+			if isShowLogs {
+				logger.Info("MariaDB command found", "clientVersion", clientVersion, "command", cmd)
+			}
 		}
 	}
 
-	logger.Info("MariaDB client tools verification completed!")
+	if isShowLogs {
+		logger.Info("MariaDB client tools verification completed!")
+	}
 }
 
 // IsMariadbBackupVersionHigherThanRestoreVersion checks if backup was made with
