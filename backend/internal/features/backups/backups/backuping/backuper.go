@@ -166,6 +166,17 @@ func (n *BackuperNode) MakeBackup(backupID uuid.UUID, isCallNotifier bool) {
 	if err != nil {
 		errMsg := err.Error()
 
+		// Log detailed error information for debugging
+		n.logger.Error("Backup execution failed",
+			"backupId", backup.ID,
+			"databaseId", databaseID,
+			"databaseType", database.Type,
+			"storageId", storage.ID,
+			"storageType", storage.Type,
+			"error", err,
+			"errorMessage", errMsg,
+		)
+
 		// Check if backup was cancelled (not due to shutdown)
 		isCancelled := strings.Contains(errMsg, "backup cancelled") ||
 			strings.Contains(errMsg, "context canceled") ||
@@ -173,6 +184,12 @@ func (n *BackuperNode) MakeBackup(backupID uuid.UUID, isCallNotifier bool) {
 		isShutdown := strings.Contains(errMsg, "shutdown")
 
 		if isCancelled && !isShutdown {
+			n.logger.Warn("Backup was cancelled by user or system",
+				"backupId", backup.ID,
+				"isCancelled", isCancelled,
+				"isShutdown", isShutdown,
+			)
+
 			backup.Status = backups_core.BackupStatusCanceled
 			backup.BackupDurationMs = time.Since(start).Milliseconds()
 			backup.BackupSizeMb = 0
