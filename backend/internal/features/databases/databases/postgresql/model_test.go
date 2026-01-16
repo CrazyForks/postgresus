@@ -754,6 +754,42 @@ func Test_Validate_WhenLocalhostAndDatabasus_ReturnsError(t *testing.T) {
 			username: "myuser",
 			database: "databasus",
 		},
+		{
+			name:     "::1 (IPv6 loopback) with databasus db",
+			host:     "::1",
+			username: "postgres",
+			database: "databasus",
+		},
+		{
+			name:     ":: (IPv6 all interfaces) with databasus db",
+			host:     "::",
+			username: "postgres",
+			database: "databasus",
+		},
+		{
+			name:     "::1 (uppercase) with DATABASUS db",
+			host:     "::1",
+			username: "POSTGRES",
+			database: "DATABASUS",
+		},
+		{
+			name:     "0.0.0.0 (all IPv4 interfaces) with databasus db",
+			host:     "0.0.0.0",
+			username: "postgres",
+			database: "databasus",
+		},
+		{
+			name:     "127.0.0.2 (loopback range) with databasus db",
+			host:     "127.0.0.2",
+			username: "postgres",
+			database: "databasus",
+		},
+		{
+			name:     "127.255.255.255 (end of loopback range) with databasus db",
+			host:     "127.255.255.255",
+			username: "postgres",
+			database: "databasus",
+		},
 	}
 
 	for _, tc := range testCases {
