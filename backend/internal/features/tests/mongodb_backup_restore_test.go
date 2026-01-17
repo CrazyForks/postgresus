@@ -550,7 +550,7 @@ func connectToMongodbContainer(
 	password := "rootpassword"
 	username := "root"
 	authDatabase := "admin"
-	host := "127.0.0.1"
+	host := config.GetEnv().TestLocalhost
 
 	portInt, err := strconv.Atoi(port)
 	if err != nil {
@@ -558,8 +558,13 @@ func connectToMongodbContainer(
 	}
 
 	uri := fmt.Sprintf(
-		"mongodb://%s:%s@%s:%d/%s?authSource=%s",
-		username, password, host, portInt, dbName, authDatabase,
+		"mongodb://%s:%s@%s:%d/%s?authSource=%s&serverSelectionTimeoutMS=5000&connectTimeoutMS=5000",
+		username,
+		password,
+		host,
+		portInt,
+		dbName,
+		authDatabase,
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

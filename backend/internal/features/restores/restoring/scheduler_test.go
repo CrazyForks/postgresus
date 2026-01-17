@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"databasus-backend/internal/config"
 	"databasus-backend/internal/features/backups/backups"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
@@ -681,7 +682,7 @@ func Test_StartRestore_CredentialsStoredEncryptedInCache(t *testing.T) {
 
 	// Create PostgreSQL database credentials with plaintext password
 	postgresDB := &postgresql.PostgresqlDatabase{
-		Host:     "localhost",
+		Host:     config.GetEnv().TestLocalhost,
 		Port:     5432,
 		Username: "testuser",
 		Password: plaintextPassword,
@@ -719,7 +720,7 @@ func Test_StartRestore_CredentialsStoredEncryptedInCache(t *testing.T) {
 		"Cached password should match the encrypted version")
 
 	// Verify other fields are present
-	assert.Equal(t, "localhost", cachedData.PostgresqlDatabase.Host)
+	assert.Equal(t, config.GetEnv().TestLocalhost, cachedData.PostgresqlDatabase.Host)
 	assert.Equal(t, 5432, cachedData.PostgresqlDatabase.Port)
 	assert.Equal(t, "testuser", cachedData.PostgresqlDatabase.Username)
 	assert.Equal(t, "testdb", *cachedData.PostgresqlDatabase.Database)
@@ -792,7 +793,7 @@ func Test_StartRestore_CredentialsRemovedAfterRestoreStarts(t *testing.T) {
 	// Create PostgreSQL database credentials
 	// Database field is nil to avoid PopulateDbData trying to connect
 	postgresDB := &postgresql.PostgresqlDatabase{
-		Host:     "localhost",
+		Host:     config.GetEnv().TestLocalhost,
 		Port:     5432,
 		Username: "testuser",
 		Password: plaintextPassword,
@@ -832,7 +833,7 @@ func Test_StartRestore_CredentialsRemovedAfterRestoreStarts(t *testing.T) {
 	// Verify mock received valid credentials
 	assert.NotNil(t, capturedDB, "Captured database should not be nil")
 	assert.NotNil(t, capturedDB.Postgresql, "PostgreSQL credentials should be provided to usecase")
-	assert.Equal(t, "localhost", capturedDB.Postgresql.Host)
+	assert.Equal(t, config.GetEnv().TestLocalhost, capturedDB.Postgresql.Host)
 	assert.Equal(t, 5432, capturedDB.Postgresql.Port)
 	assert.Equal(t, "testuser", capturedDB.Postgresql.Username)
 	assert.NotEmpty(t, capturedDB.Postgresql.Password, "Password should be provided to usecase")

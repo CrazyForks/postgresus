@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"databasus-backend/internal/config"
 	"databasus-backend/internal/features/backups/backups"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
@@ -319,7 +320,7 @@ func CreateTestRestore(
 		BackupID: backup.ID,
 		Status:   status,
 		PostgresqlDatabase: &postgresql.PostgresqlDatabase{
-			Host:     "localhost",
+			Host:     config.GetEnv().TestLocalhost,
 			Port:     5432,
 			Username: "test",
 			Password: "test",

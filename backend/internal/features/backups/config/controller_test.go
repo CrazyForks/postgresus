@@ -1462,7 +1462,7 @@ func createTestDatabaseViaAPI(
 		Type:        databases.DatabaseTypePostgres,
 		Postgresql: &postgresql.PostgresqlDatabase{
 			Version:  tools.PostgresqlVersion16,
-			Host:     "localhost",
+			Host:     config.GetEnv().TestLocalhost,
 			Port:     port,
 			Username: "testuser",
 			Password: "testpassword",

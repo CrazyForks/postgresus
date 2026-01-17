@@ -981,7 +981,7 @@ func connectToPostgresContainer(t *testing.T, port string) *PostgresContainer {
 	dbName := "testdb"
 	password := "testpassword"
 	username := "testuser"
-	host := "localhost"
+	host := config.GetEnv().TestLocalhost
 
 	portInt, err := strconv.Atoi(port)
 	assert.NoError(t, err)

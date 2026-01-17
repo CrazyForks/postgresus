@@ -113,7 +113,7 @@ func Test_Storage_BasicOperations(t *testing.T) {
 			name: "NASStorage",
 			storage: &nas_storage.NASStorage{
 				StorageID: uuid.New(),
-				Host:      "localhost",
+				Host:      config.GetEnv().TestLocalhost,
 				Port:      nasPort,
 				Share:     "backups",
 				Username:  "testuser",
@@ -147,7 +147,7 @@ func Test_Storage_BasicOperations(t *testing.T) {
 			name: "FTPStorage",
 			storage: &ftp_storage.FTPStorage{
 				StorageID: uuid.New(),
-				Host:      "localhost",
+				Host:      config.GetEnv().TestLocalhost,
 				Port:      ftpPort,
 				Username:  "testuser",
 				Password:  "testpassword",
@@ -159,7 +159,7 @@ func Test_Storage_BasicOperations(t *testing.T) {
 			name: "SFTPStorage",
 			storage: &sftp_storage.SFTPStorage{
 				StorageID:         uuid.New(),
-				Host:              "localhost",
+				Host:              config.GetEnv().TestLocalhost,
 				Port:              sftpPort,
 				Username:          "testuser",
 				Password:          "testpassword",
@@ -297,7 +297,7 @@ func setupS3Container(ctx context.Context) (*S3Container, error) {
 	secretKey := "testpassword"
 	bucketName := "test-bucket"
 	region := "us-east-1"
-	endpoint := fmt.Sprintf("127.0.0.1:%s", env.TestMinioPort)
+	endpoint := fmt.Sprintf("%s:%s", env.TestLocalhost, env.TestMinioPort)
 
 	// Create MinIO client and ensure bucket exists
 	minioClient, err := minio.New(endpoint, &minio.Options{
@@ -343,15 +343,21 @@ func setupAzuriteContainer(ctx context.Context) (*AzuriteContainer, error) {
 	accountName := "devstoreaccount1"
 	// this is real testing key for azurite, it's not a real key
 	accountKey := "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
-	serviceURL := fmt.Sprintf("http://127.0.0.1:%s/%s", env.TestAzuriteBlobPort, accountName)
+	serviceURL := fmt.Sprintf(
+		"http://%s:%s/%s",
+		env.TestLocalhost,
+		env.TestAzuriteBlobPort,
+		accountName,
+	)
 	containerNameKey := "test-container-key"
 	containerNameStr := "test-container-connstr"
 
 	// Build explicit connection string for Azurite
 	connectionString := fmt.Sprintf(
-		"DefaultEndpointsProtocol=http;AccountName=%s;AccountKey=%s;BlobEndpoint=http://127.0.0.1:%s/%s",
+		"DefaultEndpointsProtocol=http;AccountName=%s;AccountKey=%s;BlobEndpoint=http://%s:%s/%s",
 		accountName,
 		accountKey,
+		env.TestLocalhost,
 		env.TestAzuriteBlobPort,
 		accountName,
 	)

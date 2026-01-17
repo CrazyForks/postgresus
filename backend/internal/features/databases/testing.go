@@ -25,7 +25,7 @@ func GetTestPostgresConfig() *postgresql.PostgresqlDatabase {
 	testDbName := "testdb"
 	return &postgresql.PostgresqlDatabase{
 		Version:  tools.PostgresqlVersion16,
-		Host:     "localhost",
+		Host:     config.GetEnv().TestLocalhost,
 		Port:     port,
 		Username: "testuser",
 		Password: "testpassword",
@@ -48,7 +48,7 @@ func GetTestMariadbConfig() *mariadb.MariadbDatabase {
 	testDbName := "testdb"
 	return &mariadb.MariadbDatabase{
 		Version:  tools.MariadbVersion1011,
-		Host:     "localhost",
+		Host:     config.GetEnv().TestLocalhost,
 		Port:     port,
 		Username: "testuser",
 		Password: "testpassword",
@@ -69,7 +69,7 @@ func GetTestMongodbConfig() *mongodb.MongodbDatabase {
 
 	return &mongodb.MongodbDatabase{
 		Version:      tools.MongodbVersion7,
-		Host:         "localhost",
+		Host:         config.GetEnv().TestLocalhost,
 		Port:         port,
 		Username:     "root",
 		Password:     "rootpassword",

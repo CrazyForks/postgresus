@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"databasus-backend/internal/config"
+	env_config "databasus-backend/internal/config"
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/backups/backups"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
@@ -120,7 +120,7 @@ func Test_RestoreBackup_WhenUserIsWorkspaceMember_RestoreInitiated(t *testing.T)
 	request := restores_core.RestoreBackupRequest{
 		PostgresqlDatabase: &postgresql.PostgresqlDatabase{
 			Version:  tools.PostgresqlVersion16,
-			Host:     "localhost",
+			Host:     env_config.GetEnv().TestLocalhost,
 			Port:     5432,
 			Username: "postgres",
 			Password: "postgres",
@@ -151,7 +151,7 @@ func Test_RestoreBackup_WhenUserIsNotWorkspaceMember_ReturnsForbidden(t *testing
 	request := restores_core.RestoreBackupRequest{
 		PostgresqlDatabase: &postgresql.PostgresqlDatabase{
 			Version:  tools.PostgresqlVersion16,
-			Host:     "localhost",
+			Host:     env_config.GetEnv().TestLocalhost,
 			Port:     5432,
 			Username: "postgres",
 			Password: "postgres",
@@ -184,7 +184,7 @@ func Test_RestoreBackup_WithIsExcludeExtensions_FlagPassedCorrectly(t *testing.T
 	request := restores_core.RestoreBackupRequest{
 		PostgresqlDatabase: &postgresql.PostgresqlDatabase{
 			Version:             tools.PostgresqlVersion16,
-			Host:                "localhost",
+			Host:                env_config.GetEnv().TestLocalhost,
 			Port:                5432,
 			Username:            "postgres",
 			Password:            "postgres",
@@ -218,7 +218,7 @@ func Test_RestoreBackup_AuditLogWritten(t *testing.T) {
 	request := restores_core.RestoreBackupRequest{
 		PostgresqlDatabase: &postgresql.PostgresqlDatabase{
 			Version:  tools.PostgresqlVersion16,
-			Host:     "localhost",
+			Host:     env_config.GetEnv().TestLocalhost,
 			Port:     5432,
 			Username: "postgres",
 			Password: "postgres",
@@ -305,7 +305,7 @@ func Test_RestoreBackup_DiskSpaceValidation(t *testing.T) {
 				request = restores_core.RestoreBackupRequest{
 					PostgresqlDatabase: &postgresql.PostgresqlDatabase{
 						Version:  tools.PostgresqlVersion16,
-						Host:     "localhost",
+						Host:     env_config.GetEnv().TestLocalhost,
 						Port:     5432,
 						Username: "postgres",
 						Password: "postgres",
@@ -335,7 +335,7 @@ func Test_RestoreBackup_DiskSpaceValidation(t *testing.T) {
 				request = restores_core.RestoreBackupRequest{
 					MysqlDatabase: &mysql.MysqlDatabase{
 						Version:  tools.MysqlVersion80,
-						Host:     "localhost",
+						Host:     env_config.GetEnv().TestLocalhost,
 						Port:     3306,
 						Username: "root",
 						Password: "password",
@@ -428,7 +428,7 @@ func Test_CancelRestore_InProgressRestore_SuccessfullyCancelled(t *testing.T) {
 	restoreRequest := restores_core.RestoreBackupRequest{
 		PostgresqlDatabase: &postgresql.PostgresqlDatabase{
 			Version:  tools.PostgresqlVersion16,
-			Host:     "localhost",
+			Host:     env_config.GetEnv().TestLocalhost,
 			Port:     5432,
 			Username: "postgres",
 			Password: "postgres",
@@ -525,7 +525,7 @@ func Test_RestoreBackup_WithParallelRestoreInProgress_ReturnsError(t *testing.T)
 	request := restores_core.RestoreBackupRequest{
 		PostgresqlDatabase: &postgresql.PostgresqlDatabase{
 			Version:  tools.PostgresqlVersion16,
-			Host:     "localhost",
+			Host:     env_config.GetEnv().TestLocalhost,
 			Port:     5432,
 			Username: "postgres",
 			Password: "postgres",
@@ -626,7 +626,7 @@ func createTestMySQLDatabase(
 	token string,
 	router *gin.Engine,
 ) *databases.Database {
-	env := config.GetEnv()
+	env := env_config.GetEnv()
 	portStr := env.TestMysql80Port
 	if portStr == "" {
 		portStr = "33080"
@@ -644,7 +644,7 @@ func createTestMySQLDatabase(
 		Type:        databases.DatabaseTypeMysql,
 		Mysql: &mysql.MysqlDatabase{
 			Version:  tools.MysqlVersion80,
-			Host:     "localhost",
+			Host:     env_config.GetEnv().TestLocalhost,
 			Port:     port,
 			Username: "testuser",
 			Password: "testpassword",

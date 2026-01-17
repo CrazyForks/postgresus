@@ -694,7 +694,7 @@ func connectToMysqlContainer(
 	}
 
 	dbName := "testdb"
-	host := "127.0.0.1"
+	host := config.GetEnv().TestLocalhost
 	username := "root"
 	password := "rootpassword"
 
