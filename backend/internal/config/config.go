@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/google/uuid"
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/joho/godotenv"
 )
@@ -32,10 +31,9 @@ type EnvVariables struct {
 
 	ShowDbInstallationVerificationLogs bool `env:"SHOW_DB_INSTALLATION_VERIFICATION_LOGS"`
 
-	NodeID                   string
 	IsManyNodesMode          bool `env:"IS_MANY_NODES_MODE"`
 	IsPrimaryNode            bool `env:"IS_PRIMARY_NODE"`
-	IsBackupNode             bool `env:"IS_BACKUP_NODE"`
+	IsProcessingNode         bool `env:"IS_PROCESSING_NODE"`
 	NodeNetworkThroughputMBs int  `env:"NODE_NETWORK_THROUGHPUT_MBPS"`
 
 	DataFolder    string
@@ -230,14 +228,13 @@ func loadEnvVariables() {
 		env.ShowDbInstallationVerificationLogs,
 	)
 
-	env.NodeID = uuid.New().String()
 	if env.NodeNetworkThroughputMBs == 0 {
 		env.NodeNetworkThroughputMBs = 125 // 1 Gbit/s
 	}
 
 	if !env.IsManyNodesMode {
 		env.IsPrimaryNode = true
-		env.IsBackupNode = true
+		env.IsProcessingNode = true
 	}
 
 	// Valkey

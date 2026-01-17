@@ -1,4 +1,4 @@
-package backuping
+package restoring
 
 import (
 	"context"
@@ -6,20 +6,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+
+	"databasus-backend/internal/features/backups/backups"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
-	"databasus-backend/internal/features/backups/backups/usecases"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
-	"databasus-backend/internal/features/notifiers"
+	"databasus-backend/internal/features/databases/databases/postgresql"
+	restores_core "databasus-backend/internal/features/restores/core"
+	"databasus-backend/internal/features/restores/usecases"
 	"databasus-backend/internal/features/storages"
 	workspaces_controllers "databasus-backend/internal/features/workspaces/controllers"
-	workspaces_services "databasus-backend/internal/features/workspaces/services"
 	workspaces_testing "databasus-backend/internal/features/workspaces/testing"
 	"databasus-backend/internal/util/encryption"
 	"databasus-backend/internal/util/logger"
-
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 func CreateTestRouter() *gin.Engine {
@@ -33,99 +34,85 @@ func CreateTestRouter() *gin.Engine {
 	return router
 }
 
-func CreateTestBackuperNode() *BackuperNode {
-	return &BackuperNode{
+func CreateTestRestorerNode() *RestorerNode {
+	return &RestorerNode{
+		uuid.New(),
 		databases.GetDatabaseService(),
+		backups.GetBackupService(),
 		encryption.GetFieldEncryptor(),
-		workspaces_services.GetWorkspaceService(),
-		backupRepository,
+		restoreRepository,
 		backups_config.GetBackupConfigService(),
 		storages.GetStorageService(),
-		notifiers.GetNotifierService(),
-		taskCancelManager,
-		backupNodesRegistry,
+		restoreNodesRegistry,
 		logger.GetLogger(),
-		usecases.GetCreateBackupUsecase(),
-		uuid.New(),
+		usecases.GetRestoreBackupUsecase(),
+		restoreDatabaseCache,
 		time.Time{},
 	}
 }
 
-// WaitForBackupCompletion waits for a new backup to be created and completed (or failed)
-// for the given database. It checks for backups with count greater than expectedInitialCount.
-func WaitForBackupCompletion(
+// WaitForRestoreCompletion waits for a restore to be completed (or failed)
+func WaitForRestoreCompletion(
 	t *testing.T,
-	databaseID uuid.UUID,
-	expectedInitialCount int,
+	restoreID uuid.UUID,
 	timeout time.Duration,
 ) {
 	deadline := time.Now().UTC().Add(timeout)
 
 	for time.Now().UTC().Before(deadline) {
-		backups, err := backupRepository.FindByDatabaseID(databaseID)
+		restore, err := restoreRepository.FindByID(restoreID)
 		if err != nil {
-			t.Logf("WaitForBackupCompletion: error finding backups: %v", err)
+			t.Logf("WaitForRestoreCompletion: error finding restore: %v", err)
 			time.Sleep(50 * time.Millisecond)
 			continue
 		}
 
-		t.Logf(
-			"WaitForBackupCompletion: found %d backups (expected > %d)",
-			len(backups),
-			expectedInitialCount,
-		)
+		t.Logf("WaitForRestoreCompletion: restore status: %s", restore.Status)
 
-		if len(backups) > expectedInitialCount {
-			// Check if the newest backup has completed or failed
-			newestBackup := backups[0]
-			t.Logf("WaitForBackupCompletion: newest backup status: %s", newestBackup.Status)
-
-			if newestBackup.Status == backups_core.BackupStatusCompleted ||
-				newestBackup.Status == backups_core.BackupStatusFailed ||
-				newestBackup.Status == backups_core.BackupStatusCanceled {
-				t.Logf(
-					"WaitForBackupCompletion: backup finished with status %s",
-					newestBackup.Status,
-				)
-				return
-			}
+		if restore.Status == restores_core.RestoreStatusCompleted ||
+			restore.Status == restores_core.RestoreStatusFailed {
+			t.Logf(
+				"WaitForRestoreCompletion: restore finished with status %s",
+				restore.Status,
+			)
+			return
 		}
 
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	t.Logf("WaitForBackupCompletion: timeout waiting for backup to complete")
+	t.Logf("WaitForRestoreCompletion: timeout waiting for restore to complete")
 }
 
-// StartBackuperNodeForTest starts a BackuperNode in a goroutine for testing.
-// The node registers itself in the registry and subscribes to backup assignments.
+// StartRestorerNodeForTest starts a RestorerNode in a goroutine for testing.
+// The node registers itself in the registry and subscribes to restore assignments.
 // Returns a context cancel function that should be deferred to stop the node.
-func StartBackuperNodeForTest(t *testing.T, backuperNode *BackuperNode) context.CancelFunc {
+func StartRestorerNodeForTest(t *testing.T, restorerNode *RestorerNode) context.CancelFunc {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan struct{})
 
 	go func() {
-		backuperNode.Run(ctx)
+		restorerNode.Run(ctx)
 		close(done)
 	}()
 
 	// Poll registry for node presence instead of fixed sleep
 	deadline := time.Now().UTC().Add(5 * time.Second)
 	for time.Now().UTC().Before(deadline) {
-		nodes, err := backupNodesRegistry.GetAvailableNodes()
+		nodes, err := restoreNodesRegistry.GetAvailableNodes()
 		if err == nil {
 			for _, node := range nodes {
-				if node.ID == backuperNode.nodeID {
-					t.Logf("BackuperNode registered in registry: %s", backuperNode.nodeID)
+				if node.ID == restorerNode.nodeID {
+					t.Logf("RestorerNode registered in registry: %s", restorerNode.nodeID)
 
 					return func() {
 						cancel()
 						select {
 						case <-done:
-							t.Log("BackuperNode stopped gracefully")
+							t.Log("RestorerNode stopped gracefully")
 						case <-time.After(2 * time.Second):
-							t.Log("BackuperNode stop timeout")
+							t.Log("RestorerNode stop timeout")
 						}
 					}
 				}
@@ -134,12 +121,12 @@ func StartBackuperNodeForTest(t *testing.T, backuperNode *BackuperNode) context.
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	t.Fatalf("BackuperNode failed to register in registry within timeout")
+	t.Fatalf("RestorerNode failed to register in registry within timeout")
 	return nil
 }
 
-// StartSchedulerForTest starts the BackupsScheduler in a goroutine for testing.
-// The scheduler subscribes to task completions and manages backup lifecycle.
+// StartSchedulerForTest starts the RestoresScheduler in a goroutine for testing.
+// The scheduler subscribes to task completions and manages restore lifecycle.
 // Returns a context cancel function that should be deferred to stop the scheduler.
 func StartSchedulerForTest(t *testing.T) context.CancelFunc {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -147,61 +134,61 @@ func StartSchedulerForTest(t *testing.T) context.CancelFunc {
 	done := make(chan struct{})
 
 	go func() {
-		GetBackupsScheduler().Run(ctx)
+		GetRestoresScheduler().Run(ctx)
 		close(done)
 	}()
 
 	// Give scheduler time to subscribe to completions
 	time.Sleep(100 * time.Millisecond)
-	t.Log("BackupsScheduler started")
+	t.Log("RestoresScheduler started")
 
 	return func() {
 		cancel()
 		select {
 		case <-done:
-			t.Log("BackupsScheduler stopped gracefully")
+			t.Log("RestoresScheduler stopped gracefully")
 		case <-time.After(2 * time.Second):
-			t.Log("BackupsScheduler stop timeout")
+			t.Log("RestoresScheduler stop timeout")
 		}
 	}
 }
 
-// StopBackuperNodeForTest stops the BackuperNode by canceling its context.
+// StopRestorerNodeForTest stops the RestorerNode by canceling its context.
 // It waits for the node to unregister from the registry.
-func StopBackuperNodeForTest(t *testing.T, cancel context.CancelFunc, backuperNode *BackuperNode) {
+func StopRestorerNodeForTest(t *testing.T, cancel context.CancelFunc, restorerNode *RestorerNode) {
 	cancel()
 
 	// Wait for node to unregister from registry
 	deadline := time.Now().UTC().Add(2 * time.Second)
 	for time.Now().UTC().Before(deadline) {
-		nodes, err := backupNodesRegistry.GetAvailableNodes()
+		nodes, err := restoreNodesRegistry.GetAvailableNodes()
 		if err == nil {
 			found := false
 			for _, node := range nodes {
-				if node.ID == backuperNode.nodeID {
+				if node.ID == restorerNode.nodeID {
 					found = true
 					break
 				}
 			}
 			if !found {
-				t.Logf("BackuperNode unregistered from registry: %s", backuperNode.nodeID)
+				t.Logf("RestorerNode unregistered from registry: %s", restorerNode.nodeID)
 				return
 			}
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	t.Logf("BackuperNode stop completed for %s", backuperNode.nodeID)
+	t.Logf("RestorerNode stop completed for %s", restorerNode.nodeID)
 }
 
 func CreateMockNodeInRegistry(nodeID uuid.UUID, throughputMBs int, lastHeartbeat time.Time) error {
-	backupNode := BackupNode{
+	restoreNode := RestoreNode{
 		ID:            nodeID,
 		ThroughputMBs: throughputMBs,
 		LastHeartbeat: lastHeartbeat,
 	}
 
-	return backupNodesRegistry.HearthbeatNodeInRegistry(lastHeartbeat, backupNode)
+	return restoreNodesRegistry.HearthbeatNodeInRegistry(lastHeartbeat, restoreNode)
 }
 
 func UpdateNodeHeartbeatDirectly(
@@ -209,17 +196,17 @@ func UpdateNodeHeartbeatDirectly(
 	throughputMBs int,
 	lastHeartbeat time.Time,
 ) error {
-	backupNode := BackupNode{
+	restoreNode := RestoreNode{
 		ID:            nodeID,
 		ThroughputMBs: throughputMBs,
 		LastHeartbeat: lastHeartbeat,
 	}
 
-	return backupNodesRegistry.HearthbeatNodeInRegistry(lastHeartbeat, backupNode)
+	return restoreNodesRegistry.HearthbeatNodeInRegistry(lastHeartbeat, restoreNode)
 }
 
-func GetNodeFromRegistry(nodeID uuid.UUID) (*BackupNode, error) {
-	nodes, err := backupNodesRegistry.GetAvailableNodes()
+func GetNodeFromRegistry(nodeID uuid.UUID) (*RestoreNode, error) {
+	nodes, err := restoreNodesRegistry.GetAvailableNodes()
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +232,7 @@ func WaitForActiveTasksDecrease(
 	deadline := time.Now().UTC().Add(timeout)
 
 	for time.Now().UTC().Before(deadline) {
-		stats, err := backupNodesRegistry.GetBackupNodesStats()
+		stats, err := restoreNodesRegistry.GetRestoreNodesStats()
 		if err != nil {
 			t.Logf("WaitForActiveTasksDecrease: error getting node stats: %v", err)
 			time.Sleep(500 * time.Millisecond)
@@ -256,14 +243,14 @@ func WaitForActiveTasksDecrease(
 			if stat.ID == nodeID {
 				t.Logf(
 					"WaitForActiveTasksDecrease: current active tasks = %d (initial = %d)",
-					stat.ActiveBackups,
+					stat.ActiveRestores,
 					initialCount,
 				)
-				if stat.ActiveBackups < initialCount {
+				if stat.ActiveRestores < initialCount {
 					t.Logf(
 						"WaitForActiveTasksDecrease: active tasks decreased from %d to %d",
 						initialCount,
-						stat.ActiveBackups,
+						stat.ActiveRestores,
 					)
 					return true
 				}
@@ -276,4 +263,35 @@ func WaitForActiveTasksDecrease(
 
 	t.Logf("WaitForActiveTasksDecrease: timeout waiting for active tasks to decrease")
 	return false
+}
+
+// CreateTestRestore creates a test restore with the given backup and status
+func CreateTestRestore(
+	t *testing.T,
+	backup *backups_core.Backup,
+	status restores_core.RestoreStatus,
+) *restores_core.Restore {
+	restore := &restores_core.Restore{
+		BackupID: backup.ID,
+		Status:   status,
+		PostgresqlDatabase: &postgresql.PostgresqlDatabase{
+			Host:     "localhost",
+			Port:     5432,
+			Username: "test",
+			Password: "test",
+			Database: stringPtr("testdb"),
+			Version:  "16",
+		},
+	}
+
+	err := restoreRepository.Save(restore)
+	if err != nil {
+		t.Fatalf("Failed to create test restore: %v", err)
+	}
+
+	return restore
+}
+
+func stringPtr(s string) *string {
+	return &s
 }

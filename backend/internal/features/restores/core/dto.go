@@ -1,4 +1,4 @@
-package restores
+package restores_core
 
 import (
 	"databasus-backend/internal/features/databases/databases/mariadb"

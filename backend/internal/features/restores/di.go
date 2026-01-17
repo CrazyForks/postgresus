@@ -6,6 +6,7 @@ import (
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/disk"
+	restores_core "databasus-backend/internal/features/restores/core"
 	"databasus-backend/internal/features/restores/usecases"
 	"databasus-backend/internal/features/storages"
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
@@ -13,7 +14,7 @@ import (
 	"databasus-backend/internal/util/logger"
 )
 
-var restoreRepository = &RestoreRepository{}
+var restoreRepository = &restores_core.RestoreRepository{}
 var restoreService = &RestoreService{
 	backups.GetBackupService(),
 	restoreRepository,
@@ -31,17 +32,8 @@ var restoreController = &RestoreController{
 	restoreService,
 }
 
-var restoreBackgroundService = &RestoreBackgroundService{
-	restoreRepository,
-	logger.GetLogger(),
-}
-
 func GetRestoreController() *RestoreController {
 	return restoreController
-}
-
-func GetRestoreBackgroundService() *RestoreBackgroundService {
-	return restoreBackgroundService
 }
 
 func SetupDependencies() {

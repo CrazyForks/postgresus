@@ -20,7 +20,7 @@ import (
 	"databasus-backend/internal/features/databases"
 	mongodbtypes "databasus-backend/internal/features/databases/databases/mongodb"
 	encryption_secrets "databasus-backend/internal/features/encryption/secrets"
-	"databasus-backend/internal/features/restores/models"
+	restores_core "databasus-backend/internal/features/restores/core"
 	"databasus-backend/internal/features/storages"
 	util_encryption "databasus-backend/internal/util/encryption"
 	"databasus-backend/internal/util/tools"
@@ -39,7 +39,7 @@ func (uc *RestoreMongodbBackupUsecase) Execute(
 	originalDB *databases.Database,
 	restoringToDB *databases.Database,
 	backupConfig *backups_config.BackupConfig,
-	restore models.Restore,
+	restore restores_core.Restore,
 	backup *backups_core.Backup,
 	storage *storages.Storage,
 ) error {

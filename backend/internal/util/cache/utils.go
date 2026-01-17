@@ -67,6 +67,43 @@ func (c *CacheUtil[T]) Set(key string, item *T) {
 	c.client.Do(ctx, c.client.B().Set().Key(fullKey).Value(string(data)).Ex(c.expiry).Build())
 }
 
+func (c *CacheUtil[T]) SetWithExpiration(key string, item *T, expiry time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	data, err := json.Marshal(item)
+	if err != nil {
+		return
+	}
+
+	fullKey := c.prefix + key
+	c.client.Do(ctx, c.client.B().Set().Key(fullKey).Value(string(data)).Ex(expiry).Build())
+}
+
+func (c *CacheUtil[T]) GetAndDelete(key string) *T {
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	fullKey := c.prefix + key
+	result := c.client.Do(ctx, c.client.B().Getdel().Key(fullKey).Build())
+
+	if result.Error() != nil {
+		return nil
+	}
+
+	data, err := result.AsBytes()
+	if err != nil {
+		return nil
+	}
+
+	var item T
+	if err := json.Unmarshal(data, &item); err != nil {
+		return nil
+	}
+
+	return &item
+}
+
 func (c *CacheUtil[T]) Invalidate(key string) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()

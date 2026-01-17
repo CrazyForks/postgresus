@@ -25,10 +25,10 @@ import (
 	healthcheck_config "databasus-backend/internal/features/healthcheck/config"
 	"databasus-backend/internal/features/notifiers"
 	"databasus-backend/internal/features/restores"
+	"databasus-backend/internal/features/restores/restoring"
 	"databasus-backend/internal/features/storages"
 	system_healthcheck "databasus-backend/internal/features/system/healthcheck"
 	task_cancellation "databasus-backend/internal/features/tasks/cancellation"
-	task_registry "databasus-backend/internal/features/tasks/registry"
 	users_controllers "databasus-backend/internal/features/users/controllers"
 	users_middleware "databasus-backend/internal/features/users/middleware"
 	users_services "databasus-backend/internal/features/users/services"
@@ -273,7 +273,7 @@ func runBackgroundTasks(log *slog.Logger) {
 		})
 
 		go runWithPanicLogging(log, "restore background service", func() {
-			restores.GetRestoreBackgroundService().Run(ctx)
+			restoring.GetRestoresScheduler().Run(ctx)
 		})
 
 		go runWithPanicLogging(log, "healthcheck attempt background service", func() {
@@ -288,21 +288,29 @@ func runBackgroundTasks(log *slog.Logger) {
 			backups_download.GetDownloadTokenBackgroundService().Run(ctx)
 		})
 
-		go runWithPanicLogging(log, "task nodes registry background service", func() {
-			task_registry.GetTaskNodesRegistry().Run(ctx)
+		go runWithPanicLogging(log, "backup nodes registry background service", func() {
+			backuping.GetBackupNodesRegistry().Run(ctx)
+		})
+
+		go runWithPanicLogging(log, "restore nodes registry background service", func() {
+			restoring.GetRestoreNodesRegistry().Run(ctx)
 		})
 	} else {
 		log.Info("Skipping primary node tasks as not primary node")
 	}
 
-	if config.GetEnv().IsBackupNode {
+	if config.GetEnv().IsProcessingNode {
 		log.Info("Starting backup node background tasks...")
 
 		go runWithPanicLogging(log, "backup node", func() {
 			backuping.GetBackuperNode().Run(ctx)
 		})
+
+		go runWithPanicLogging(log, "restore node", func() {
+			restoring.GetRestorerNode().Run(ctx)
+		})
 	} else {
-		log.Info("Skipping backup node tasks as not backup node")
+		log.Info("Skipping backup/restore node tasks as not backup node")
 	}
 }
 

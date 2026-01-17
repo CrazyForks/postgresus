@@ -1,6 +1,7 @@
 package restores
 
 import (
+	restores_core "databasus-backend/internal/features/restores/core"
 	users_middleware "databasus-backend/internal/features/users/middleware"
 	"net/http"
 
@@ -23,7 +24,7 @@ func (c *RestoreController) RegisterRoutes(router *gin.RouterGroup) {
 // @Tags restores
 // @Produce json
 // @Param backupId path string true "Backup ID"
-// @Success 200 {array} models.Restore
+// @Success 200 {array} restores_core.Restore
 // @Failure 400
 // @Failure 401
 // @Router /restores/{backupId} [get]
@@ -71,7 +72,7 @@ func (c *RestoreController) RestoreBackup(ctx *gin.Context) {
 		return
 	}
 
-	var requestDTO RestoreBackupRequest
+	var requestDTO restores_core.RestoreBackupRequest
 	if err := ctx.ShouldBindJSON(&requestDTO); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

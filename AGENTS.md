@@ -7,6 +7,7 @@ This is NOT a strict set of rules, but a set of recommendations to help you writ
 
 ## Table of Contents
 
+- [Engineering Philosophy](#engineering-philosophy)
 - [Backend Guidelines](#backend-guidelines)
   - [Code Style](#code-style)
   - [Comments](#comments)
@@ -19,6 +20,67 @@ This is NOT a strict set of rules, but a set of recommendations to help you writ
   - [CRUD Examples](#crud-examples)
 - [Frontend Guidelines](#frontend-guidelines)
   - [React Component Structure](#react-component-structure)
+
+---
+
+## Engineering Philosophy
+
+**Think like a skeptical senior engineer and code reviewer. Don't just do what was asked—also think about what should have been asked.**
+
+⚠️ **Balance vigilance with pragmatism:** Catch real issues, not theoretical ones. Don't let perfect be the enemy of good.
+
+### Task Context Assessment:
+
+**First, assess the task scope:**
+
+- **Trivial** (typos, formatting, simple field adds): Apply directly with minimal analysis
+- **Standard** (CRUD, typical features): Brief assumption check, proceed
+- **Complex** (architecture, security, performance-critical): Full analysis required
+- **Unclear** (ambiguous requirements): Always clarify assumptions first
+
+### For Non-Trivial Tasks:
+
+1. **Restate the objective and list assumptions** (explicit + implicit)
+   - If any assumption is shaky, call it out clearly
+   - Distinguish between what's specified and what you're inferring
+
+2. **Propose appropriate solutions:**
+   - For complex tasks: 2–3 viable approaches (including a simpler baseline)
+   - Recommend one with clear tradeoffs
+   - Consider: complexity, maintainability, performance, future extensibility
+
+3. **Identify risks proactively:**
+   - Edge cases and boundary conditions
+   - Security/privacy pitfalls
+   - Performance risks and scalability concerns
+   - Operational concerns (deployment, observability, rollback, monitoring)
+
+4. **Handle ambiguity:**
+   - If requirements are ambiguous, make a reasonable default and proceed
+   - Clearly label your assumptions
+   - Document what would change under alternative assumptions
+
+5. **Deliver quality:**
+   - Provide a solution that is correct, testable, and maintainable
+   - Include minimal tests or validation steps
+   - Follow project testing philosophy: prefer controller tests over unit tests
+   - Follow all project guidelines from this document
+
+6. **Self-review before finalizing:**
+   - Ask: "What could go wrong?"
+   - Patch the answer accordingly
+   - Verify edge cases are handled
+
+### Application Guidelines:
+
+**Scale your response to the task:**
+
+- **Trivial changes:** Steps 5-6 only (deliver quality + self-review)
+- **Standard features:** Steps 1, 5-6 (restate + deliver + review)
+- **Complex/risky changes:** All steps 1-6
+- **Ambiguous requests:** Steps 1, 4 mandatory
+
+**Be proportionally thorough—brief for simple tasks, comprehensive for risky ones. Avoid analysis paralysis.**
 
 ---
 

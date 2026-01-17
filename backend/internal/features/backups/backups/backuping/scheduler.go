@@ -7,7 +7,6 @@ import (
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/storages"
 	task_cancellation "databasus-backend/internal/features/tasks/cancellation"
-	task_registry "databasus-backend/internal/features/tasks/registry"
 	"databasus-backend/internal/util/encryption"
 	"databasus-backend/internal/util/period"
 	"fmt"
@@ -28,7 +27,7 @@ type BackupsScheduler struct {
 	backupConfigService *backups_config.BackupConfigService
 	storageService      *storages.StorageService
 	taskCancelManager   *task_cancellation.TaskCancelManager
-	tasksRegistry       *task_registry.TaskNodesRegistry
+	backupNodesRegistry *BackupNodesRegistry
 
 	lastBackupTime time.Time
 	logger         *slog.Logger
@@ -50,12 +49,14 @@ func (s *BackupsScheduler) Run(ctx context.Context) {
 		panic(err)
 	}
 
-	if err := s.tasksRegistry.SubscribeForTasksCompletions(s.onBackupCompleted); err != nil {
+	err := s.backupNodesRegistry.SubscribeForBackupsCompletions(s.onBackupCompleted)
+	if err != nil {
 		s.logger.Error("Failed to subscribe to backup completions", "error", err)
 		panic(err)
 	}
+
 	defer func() {
-		if err := s.tasksRegistry.UnsubscribeForTasksCompletions(); err != nil {
+		if err := s.backupNodesRegistry.UnsubscribeForBackupsCompletions(); err != nil {
 			s.logger.Error("Failed to unsubscribe from backup completions", "error", err)
 		}
 	}()
@@ -180,7 +181,7 @@ func (s *BackupsScheduler) StartBackup(databaseID uuid.UUID, isCallNotifier bool
 		return
 	}
 
-	if err := s.tasksRegistry.IncrementTasksInProgress(leastBusyNodeID.String()); err != nil {
+	if err := s.backupNodesRegistry.IncrementBackupsInProgress(*leastBusyNodeID); err != nil {
 		s.logger.Error(
 			"Failed to increment backups in progress",
 			"nodeId",
@@ -193,7 +194,7 @@ func (s *BackupsScheduler) StartBackup(databaseID uuid.UUID, isCallNotifier bool
 		return
 	}
 
-	if err := s.tasksRegistry.AssignTaskToNode(leastBusyNodeID.String(), backup.ID, isCallNotifier); err != nil {
+	if err := s.backupNodesRegistry.AssignBackupToNode(*leastBusyNodeID, backup.ID, isCallNotifier); err != nil {
 		s.logger.Error(
 			"Failed to submit backup",
 			"nodeId",
@@ -203,7 +204,7 @@ func (s *BackupsScheduler) StartBackup(databaseID uuid.UUID, isCallNotifier bool
 			"error",
 			err,
 		)
-		if decrementErr := s.tasksRegistry.DecrementTasksInProgress(leastBusyNodeID.String()); decrementErr != nil {
+		if decrementErr := s.backupNodesRegistry.DecrementBackupsInProgress(*leastBusyNodeID); decrementErr != nil {
 			s.logger.Error(
 				"Failed to decrement backups in progress after submit failure",
 				"nodeId",
@@ -398,7 +399,7 @@ func (s *BackupsScheduler) runPendingBackups() error {
 }
 
 func (s *BackupsScheduler) calculateLeastBusyNode() (*uuid.UUID, error) {
-	nodes, err := s.tasksRegistry.GetAvailableNodes()
+	nodes, err := s.backupNodesRegistry.GetAvailableNodes()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get available nodes: %w", err)
 	}
@@ -407,17 +408,17 @@ func (s *BackupsScheduler) calculateLeastBusyNode() (*uuid.UUID, error) {
 		return nil, fmt.Errorf("no nodes available")
 	}
 
-	stats, err := s.tasksRegistry.GetNodesStats()
+	stats, err := s.backupNodesRegistry.GetBackupNodesStats()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get backup nodes stats: %w", err)
 	}
 
 	statsMap := make(map[uuid.UUID]int)
 	for _, stat := range stats {
-		statsMap[stat.ID] = stat.ActiveTasks
+		statsMap[stat.ID] = stat.ActiveBackups
 	}
 
-	var bestNode *task_registry.TaskNode
+	var bestNode *BackupNode
 	var bestScore float64 = -1
 
 	for i := range nodes {
@@ -445,21 +446,9 @@ func (s *BackupsScheduler) calculateLeastBusyNode() (*uuid.UUID, error) {
 	return &bestNode.ID, nil
 }
 
-func (s *BackupsScheduler) onBackupCompleted(nodeIDStr string, backupID uuid.UUID) {
-	nodeID, err := uuid.Parse(nodeIDStr)
-	if err != nil {
-		s.logger.Error(
-			"Failed to parse node ID from completion message",
-			"nodeId",
-			nodeIDStr,
-			"error",
-			err,
-		)
-		return
-	}
-
+func (s *BackupsScheduler) onBackupCompleted(nodeID uuid.UUID, backupID uuid.UUID) {
 	// Verify this task is actually a backup (registry contains multiple task types)
-	_, err = s.backupRepository.FindByID(backupID)
+	_, err := s.backupRepository.FindByID(backupID)
 	if err != nil {
 		// Not a backup task, ignore it
 		return
@@ -505,7 +494,7 @@ func (s *BackupsScheduler) onBackupCompleted(nodeIDStr string, backupID uuid.UUI
 		s.backupToNodeRelations[nodeID] = relation
 	}
 
-	if err := s.tasksRegistry.DecrementTasksInProgress(nodeIDStr); err != nil {
+	if err := s.backupNodesRegistry.DecrementBackupsInProgress(nodeID); err != nil {
 		s.logger.Error(
 			"Failed to decrement backups in progress",
 			"nodeId",
@@ -519,7 +508,7 @@ func (s *BackupsScheduler) onBackupCompleted(nodeIDStr string, backupID uuid.UUI
 }
 
 func (s *BackupsScheduler) checkDeadNodesAndFailBackups() error {
-	nodes, err := s.tasksRegistry.GetAvailableNodes()
+	nodes, err := s.backupNodesRegistry.GetAvailableNodes()
 	if err != nil {
 		return fmt.Errorf("failed to get available nodes: %w", err)
 	}
@@ -575,7 +564,7 @@ func (s *BackupsScheduler) checkDeadNodesAndFailBackups() error {
 				continue
 			}
 
-			if err := s.tasksRegistry.DecrementTasksInProgress(nodeID.String()); err != nil {
+			if err := s.backupNodesRegistry.DecrementBackupsInProgress(nodeID); err != nil {
 				s.logger.Error(
 					"Failed to decrement backups in progress for dead node",
 					"nodeId",

@@ -23,8 +23,7 @@ import (
 	"databasus-backend/internal/features/databases"
 	pgtypes "databasus-backend/internal/features/databases/databases/postgresql"
 	"databasus-backend/internal/features/restores"
-	restores_enums "databasus-backend/internal/features/restores/enums"
-	restores_models "databasus-backend/internal/features/restores/models"
+	restores_core "databasus-backend/internal/features/restores/core"
 	"databasus-backend/internal/features/storages"
 	users_enums "databasus-backend/internal/features/users/enums"
 	users_testing "databasus-backend/internal/features/users/testing"
@@ -212,7 +211,7 @@ func Test_BackupAndRestoreSupabase_PublicSchemaOnly_RestoreIsSuccessful(t *testi
 	)
 
 	restore := waitForRestoreCompletion(t, router, backup.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, restores_enums.RestoreStatusCompleted, restore.Status)
+	assert.Equal(t, restores_core.RestoreStatusCompleted, restore.Status)
 
 	var countAfterRestore int
 	err = supabaseDB.Get(
@@ -439,7 +438,7 @@ func testBackupRestoreForVersion(t *testing.T, pgVersion string, port string, cp
 	)
 
 	restore := waitForRestoreCompletion(t, router, backup.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, restores_enums.RestoreStatusCompleted, restore.Status)
+	assert.Equal(t, restores_core.RestoreStatusCompleted, restore.Status)
 
 	var tableExists bool
 	err = newDB.Get(
@@ -555,7 +554,7 @@ func testSchemaSelectionAllSchemasForVersion(t *testing.T, pgVersion string, por
 	)
 
 	restore := waitForRestoreCompletion(t, router, backup.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, restores_enums.RestoreStatusCompleted, restore.Status)
+	assert.Equal(t, restores_core.RestoreStatusCompleted, restore.Status)
 
 	var publicTableExists bool
 	err = newDB.Get(&publicTableExists, `
@@ -689,7 +688,7 @@ func testBackupRestoreWithExcludeExtensionsForVersion(t *testing.T, pgVersion st
 	)
 
 	restore := waitForRestoreCompletion(t, router, backup.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, restores_enums.RestoreStatusCompleted, restore.Status)
+	assert.Equal(t, restores_core.RestoreStatusCompleted, restore.Status)
 
 	// Verify the table was restored
 	var tableExists bool
@@ -829,7 +828,7 @@ func testBackupRestoreWithoutExcludeExtensionsForVersion(
 	)
 
 	restore := waitForRestoreCompletion(t, router, backup.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, restores_enums.RestoreStatusCompleted, restore.Status)
+	assert.Equal(t, restores_core.RestoreStatusCompleted, restore.Status)
 
 	// Verify the extension was recovered
 	var extensionExists bool
@@ -956,7 +955,7 @@ func testBackupRestoreWithReadOnlyUserForVersion(t *testing.T, pgVersion string,
 	)
 
 	restore := waitForRestoreCompletion(t, router, backup.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, restores_enums.RestoreStatusCompleted, restore.Status)
+	assert.Equal(t, restores_core.RestoreStatusCompleted, restore.Status)
 
 	var tableExists bool
 	err = newDB.Get(
@@ -1076,7 +1075,7 @@ func testSchemaSelectionOnlySpecifiedSchemasForVersion(
 	)
 
 	restore := waitForRestoreCompletion(t, router, backup.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, restores_enums.RestoreStatusCompleted, restore.Status)
+	assert.Equal(t, restores_core.RestoreStatusCompleted, restore.Status)
 
 	var publicTableExists bool
 	err = newDB.Get(&publicTableExists, `
@@ -1190,7 +1189,7 @@ func testBackupRestoreWithEncryptionForVersion(t *testing.T, pgVersion string, p
 	)
 
 	restore := waitForRestoreCompletion(t, router, backup.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, restores_enums.RestoreStatusCompleted, restore.Status)
+	assert.Equal(t, restores_core.RestoreStatusCompleted, restore.Status)
 
 	var tableExists bool
 	err = newDB.Get(
@@ -1286,7 +1285,7 @@ func waitForRestoreCompletion(
 	backupID uuid.UUID,
 	token string,
 	timeout time.Duration,
-) *restores_models.Restore {
+) *restores_core.Restore {
 	startTime := time.Now()
 	pollInterval := 500 * time.Millisecond
 
@@ -1295,7 +1294,7 @@ func waitForRestoreCompletion(
 			t.Fatalf("Timeout waiting for restore completion after %v", timeout)
 		}
 
-		var restores []*restores_models.Restore
+		var restores []*restores_core.Restore
 		test_utils.MakeGetRequestAndUnmarshal(
 			t,
 			router,
@@ -1306,10 +1305,10 @@ func waitForRestoreCompletion(
 		)
 
 		for _, restore := range restores {
-			if restore.Status == restores_enums.RestoreStatusCompleted {
+			if restore.Status == restores_core.RestoreStatusCompleted {
 				return restore
 			}
-			if restore.Status == restores_enums.RestoreStatusFailed {
+			if restore.Status == restores_core.RestoreStatusFailed {
 				failMsg := "unknown error"
 				if restore.FailMessage != nil {
 					failMsg = *restore.FailMessage
@@ -1476,7 +1475,7 @@ func createRestoreWithCpuCountViaAPI(
 	cpuCount int,
 	token string,
 ) {
-	request := restores.RestoreBackupRequest{
+	request := restores_core.RestoreBackupRequest{
 		PostgresqlDatabase: &pgtypes.PostgresqlDatabase{
 			Host:     host,
 			Port:     port,
@@ -1509,7 +1508,7 @@ func createRestoreWithOptionsViaAPI(
 	isExcludeExtensions bool,
 	token string,
 ) {
-	request := restores.RestoreBackupRequest{
+	request := restores_core.RestoreBackupRequest{
 		PostgresqlDatabase: &pgtypes.PostgresqlDatabase{
 			Host:                host,
 			Port:                port,
@@ -1647,7 +1646,7 @@ func createSupabaseRestoreViaAPI(
 	database string,
 	token string,
 ) {
-	request := restores.RestoreBackupRequest{
+	request := restores_core.RestoreBackupRequest{
 		PostgresqlDatabase: &pgtypes.PostgresqlDatabase{
 			Host:     host,
 			Port:     port,

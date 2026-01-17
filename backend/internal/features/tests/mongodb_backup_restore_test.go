@@ -23,9 +23,7 @@ import (
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	mongodbtypes "databasus-backend/internal/features/databases/databases/mongodb"
-	"databasus-backend/internal/features/restores"
-	restores_enums "databasus-backend/internal/features/restores/enums"
-	restores_models "databasus-backend/internal/features/restores/models"
+	restores_core "databasus-backend/internal/features/restores/core"
 	"databasus-backend/internal/features/storages"
 	users_enums "databasus-backend/internal/features/users/enums"
 	users_testing "databasus-backend/internal/features/users/testing"
@@ -175,7 +173,7 @@ func testMongodbBackupRestoreForVersion(
 	)
 
 	restore := waitForMongodbRestoreCompletion(t, router, backup.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, restores_enums.RestoreStatusCompleted, restore.Status)
+	assert.Equal(t, restores_core.RestoreStatusCompleted, restore.Status)
 
 	verifyMongodbDataIntegrity(t, container, newDBName)
 
@@ -254,7 +252,7 @@ func testMongodbBackupRestoreWithEncryptionForVersion(
 	)
 
 	restore := waitForMongodbRestoreCompletion(t, router, backup.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, restores_enums.RestoreStatusCompleted, restore.Status)
+	assert.Equal(t, restores_core.RestoreStatusCompleted, restore.Status)
 
 	verifyMongodbDataIntegrity(t, container, newDBName)
 
@@ -342,7 +340,7 @@ func testMongodbBackupRestoreWithReadOnlyUserForVersion(
 	)
 
 	restore := waitForMongodbRestoreCompletion(t, router, backup.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, restores_enums.RestoreStatusCompleted, restore.Status)
+	assert.Equal(t, restores_core.RestoreStatusCompleted, restore.Status)
 
 	verifyMongodbDataIntegrity(t, container, newDBName)
 
@@ -431,7 +429,7 @@ func createMongodbRestoreViaAPI(
 	version tools.MongodbVersion,
 	token string,
 ) {
-	request := restores.RestoreBackupRequest{
+	request := restores_core.RestoreBackupRequest{
 		MongodbDatabase: &mongodbtypes.MongodbDatabase{
 			Host:         host,
 			Port:         port,
@@ -461,7 +459,7 @@ func waitForMongodbRestoreCompletion(
 	backupID uuid.UUID,
 	token string,
 	timeout time.Duration,
-) *restores_models.Restore {
+) *restores_core.Restore {
 	startTime := time.Now()
 	pollInterval := 500 * time.Millisecond
 
@@ -470,7 +468,7 @@ func waitForMongodbRestoreCompletion(
 			t.Fatalf("Timeout waiting for MongoDB restore completion after %v", timeout)
 		}
 
-		var restoresList []*restores_models.Restore
+		var restoresList []*restores_core.Restore
 		test_utils.MakeGetRequestAndUnmarshal(
 			t,
 			router,
@@ -481,10 +479,10 @@ func waitForMongodbRestoreCompletion(
 		)
 
 		for _, restore := range restoresList {
-			if restore.Status == restores_enums.RestoreStatusCompleted {
+			if restore.Status == restores_core.RestoreStatusCompleted {
 				return restore
 			}
-			if restore.Status == restores_enums.RestoreStatusFailed {
+			if restore.Status == restores_core.RestoreStatusFailed {
 				failMsg := "unknown error"
 				if restore.FailMessage != nil {
 					failMsg = *restore.FailMessage

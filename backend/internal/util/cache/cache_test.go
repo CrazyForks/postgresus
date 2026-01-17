@@ -1,7 +1,9 @@
 package cache_utils
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -48,4 +50,44 @@ func Test_ClearAllCache_AfterClear_CacheIsEmpty(t *testing.T) {
 		retrieved := cacheUtil.Get(tk.key)
 		assert.Nil(t, retrieved, "Key %s should be deleted after clearing", tk.prefix+tk.key)
 	}
+}
+
+func Test_SetWithExpiration_SetsCorrectTTL(t *testing.T) {
+	client := getCache()
+
+	// Create a cache utility
+	testPrefix := "test:ttl:"
+	cacheUtil := NewCacheUtil[string](client, testPrefix)
+
+	// Set a value with 1-hour expiration
+	testKey := "key1"
+	testValue := "test value"
+	oneHour := 1 * time.Hour
+
+	cacheUtil.SetWithExpiration(testKey, &testValue, oneHour)
+
+	// Verify the value was set
+	retrieved := cacheUtil.Get(testKey)
+	assert.NotNil(t, retrieved, "Value should be stored")
+	assert.Equal(t, testValue, *retrieved, "Retrieved value should match")
+
+	// Check the TTL using Valkey TTL command
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultCacheTimeout)
+	defer cancel()
+
+	fullKey := testPrefix + testKey
+	ttlResult := client.Do(ctx, client.B().Ttl().Key(fullKey).Build())
+	assert.NoError(t, ttlResult.Error(), "TTL command should not error")
+
+	ttlSeconds, err := ttlResult.AsInt64()
+	assert.NoError(t, err, "TTL should be retrievable as int64")
+
+	// TTL should be approximately 1 hour (3600 seconds)
+	// Allow for a small margin (within 10 seconds of 3600)
+	expectedTTL := int64(3600)
+	assert.GreaterOrEqual(t, ttlSeconds, expectedTTL-10, "TTL should be close to 1 hour")
+	assert.LessOrEqual(t, ttlSeconds, expectedTTL, "TTL should not exceed 1 hour")
+
+	// Clean up
+	cacheUtil.Invalidate(testKey)
 }

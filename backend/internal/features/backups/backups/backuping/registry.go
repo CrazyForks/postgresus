@@ -1,4 +1,4 @@
-package task_registry
+package backuping
 
 import (
 	"context"
@@ -15,45 +15,41 @@ import (
 )
 
 const (
-	nodeInfoKeyPrefix     = "node:"
-	nodeInfoKeySuffix     = ":info"
-	nodeActiveTasksPrefix = "node:"
-	nodeActiveTasksSuffix = ":active_tasks"
-	taskSubmitChannel     = "task:submit"
-	taskCompletionChannel = "task:completion"
+	nodeInfoKeyPrefix       = "backup:node:"
+	nodeInfoKeySuffix       = ":info"
+	nodeActiveBackupsPrefix = "backup:node:"
+	nodeActiveBackupsSuffix = ":active_backups"
+	backupSubmitChannel     = "backup:submit"
+	backupCompletionChannel = "backup:completion"
 
 	deadNodeThreshold     = 2 * time.Minute
 	cleanupTickerInterval = 1 * time.Second
 )
 
-// TaskNodesRegistry helps to sync tasks scheduler (backuping or restoring)
-// and task nodes which are used for network-intensive tasks processing
+// BackupNodesRegistry helps to sync backups scheduler and backup nodes.
 //
 // Features:
 // - Track node availability and load level
-// - Assign from scheduler to node tasks needed to be processed
-// - Notify scheduler from node about task completion
+// - Assign from scheduler to node backups needed to be processed
+// - Notify scheduler from node about backup completion
 //
 // Important things to remember:
-//   - Node can contain different tasks types so when task is assigned
-//     or node's tasks cleaned - should be performed DB check in DB
-//     that task with this ID exists for this task type at all
-//   - Nodes without heathbeat for more than 2 minutes are not included
+//   - Nodes without heartbeat for more than 2 minutes are not included
 //     in available nodes list and stats
 //
 // Cleanup dead nodes performed on 2 levels:
 //   - List and stats functions do not return dead nodes
 //   - Periodically dead nodes are cleaned up in cache (to not
 //     accumulate too many dead nodes in cache)
-type TaskNodesRegistry struct {
+type BackupNodesRegistry struct {
 	client            valkey.Client
 	logger            *slog.Logger
 	timeout           time.Duration
-	pubsubTasks       *cache_utils.PubSubManager
+	pubsubBackups     *cache_utils.PubSubManager
 	pubsubCompletions *cache_utils.PubSubManager
 }
 
-func (r *TaskNodesRegistry) Run(ctx context.Context) {
+func (r *BackupNodesRegistry) Run(ctx context.Context) {
 	if err := r.cleanupDeadNodes(); err != nil {
 		r.logger.Error("Failed to cleanup dead nodes on startup", "error", err)
 	}
@@ -72,7 +68,7 @@ func (r *TaskNodesRegistry) Run(ctx context.Context) {
 	}
 }
 
-func (r *TaskNodesRegistry) GetAvailableNodes() ([]TaskNode, error) {
+func (r *BackupNodesRegistry) GetAvailableNodes() ([]BackupNode, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
 	defer cancel()
 
@@ -104,7 +100,7 @@ func (r *TaskNodesRegistry) GetAvailableNodes() ([]TaskNode, error) {
 	}
 
 	if len(allKeys) == 0 {
-		return []TaskNode{}, nil
+		return []BackupNode{}, nil
 	}
 
 	keyDataMap, err := r.pipelineGetKeys(allKeys)
@@ -113,14 +109,15 @@ func (r *TaskNodesRegistry) GetAvailableNodes() ([]TaskNode, error) {
 	}
 
 	threshold := time.Now().UTC().Add(-deadNodeThreshold)
-	var nodes []TaskNode
+	var nodes []BackupNode
+
 	for key, data := range keyDataMap {
 		// Skip if the key doesn't exist (data is empty)
 		if len(data) == 0 {
 			continue
 		}
 
-		var node TaskNode
+		var node BackupNode
 		if err := json.Unmarshal(data, &node); err != nil {
 			r.logger.Warn("Failed to unmarshal node data", "key", key, "error", err)
 			continue
@@ -141,13 +138,13 @@ func (r *TaskNodesRegistry) GetAvailableNodes() ([]TaskNode, error) {
 	return nodes, nil
 }
 
-func (r *TaskNodesRegistry) GetNodesStats() ([]TaskNodeStats, error) {
+func (r *BackupNodesRegistry) GetBackupNodesStats() ([]BackupNodeStats, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
 	defer cancel()
 
 	var allKeys []string
 	cursor := uint64(0)
-	pattern := nodeActiveTasksPrefix + "*" + nodeActiveTasksSuffix
+	pattern := nodeActiveBackupsPrefix + "*" + nodeActiveBackupsSuffix
 
 	for {
 		result := r.client.Do(
@@ -156,7 +153,7 @@ func (r *TaskNodesRegistry) GetNodesStats() ([]TaskNodeStats, error) {
 		)
 
 		if result.Error() != nil {
-			return nil, fmt.Errorf("failed to scan active tasks keys: %w", result.Error())
+			return nil, fmt.Errorf("failed to scan active backups keys: %w", result.Error())
 		}
 
 		scanResult, err := result.AsScanEntry()
@@ -173,18 +170,18 @@ func (r *TaskNodesRegistry) GetNodesStats() ([]TaskNodeStats, error) {
 	}
 
 	if len(allKeys) == 0 {
-		return []TaskNodeStats{}, nil
+		return []BackupNodeStats{}, nil
 	}
 
 	keyDataMap, err := r.pipelineGetKeys(allKeys)
 	if err != nil {
-		return nil, fmt.Errorf("failed to pipeline get active tasks keys: %w", err)
+		return nil, fmt.Errorf("failed to pipeline get active backups keys: %w", err)
 	}
 
 	var nodeInfoKeys []string
 	nodeIDToStatsKey := make(map[string]string)
 	for key := range keyDataMap {
-		nodeID := r.extractNodeIDFromKey(key, nodeActiveTasksPrefix, nodeActiveTasksSuffix)
+		nodeID := r.extractNodeIDFromKey(key, nodeActiveBackupsPrefix, nodeActiveBackupsSuffix)
 		nodeIDStr := nodeID.String()
 		infoKey := fmt.Sprintf("%s%s%s", nodeInfoKeyPrefix, nodeIDStr, nodeInfoKeySuffix)
 		nodeInfoKeys = append(nodeInfoKeys, infoKey)
@@ -197,14 +194,14 @@ func (r *TaskNodesRegistry) GetNodesStats() ([]TaskNodeStats, error) {
 	}
 
 	threshold := time.Now().UTC().Add(-deadNodeThreshold)
-	var stats []TaskNodeStats
+	var stats []BackupNodeStats
 	for infoKey, nodeData := range nodeInfoMap {
 		// Skip if the info key doesn't exist (nodeData is empty)
 		if len(nodeData) == 0 {
 			continue
 		}
 
-		var node TaskNode
+		var node BackupNode
 		if err := json.Unmarshal(nodeData, &node); err != nil {
 			r.logger.Warn("Failed to unmarshal node data", "key", infoKey, "error", err)
 			continue
@@ -223,13 +220,13 @@ func (r *TaskNodesRegistry) GetNodesStats() ([]TaskNodeStats, error) {
 		tasksData := keyDataMap[statsKey]
 		count, err := r.parseIntFromBytes(tasksData)
 		if err != nil {
-			r.logger.Warn("Failed to parse active tasks count", "key", statsKey, "error", err)
+			r.logger.Warn("Failed to parse active backups count", "key", statsKey, "error", err)
 			continue
 		}
 
-		stat := TaskNodeStats{
-			ID:          node.ID,
-			ActiveTasks: int(count),
+		stat := BackupNodeStats{
+			ID:            node.ID,
+			ActiveBackups: int(count),
 		}
 		stats = append(stats, stat)
 	}
@@ -237,16 +234,16 @@ func (r *TaskNodesRegistry) GetNodesStats() ([]TaskNodeStats, error) {
 	return stats, nil
 }
 
-func (r *TaskNodesRegistry) IncrementTasksInProgress(nodeID string) error {
+func (r *BackupNodesRegistry) IncrementBackupsInProgress(nodeID uuid.UUID) error {
 	ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
 	defer cancel()
 
-	key := fmt.Sprintf("%s%s%s", nodeActiveTasksPrefix, nodeID, nodeActiveTasksSuffix)
+	key := fmt.Sprintf("%s%s%s", nodeActiveBackupsPrefix, nodeID.String(), nodeActiveBackupsSuffix)
 	result := r.client.Do(ctx, r.client.B().Incr().Key(key).Build())
 
 	if result.Error() != nil {
 		return fmt.Errorf(
-			"failed to increment tasks in progress for node %s: %w",
+			"failed to increment backups in progress for node %s: %w",
 			nodeID,
 			result.Error(),
 		)
@@ -255,16 +252,16 @@ func (r *TaskNodesRegistry) IncrementTasksInProgress(nodeID string) error {
 	return nil
 }
 
-func (r *TaskNodesRegistry) DecrementTasksInProgress(nodeID string) error {
+func (r *BackupNodesRegistry) DecrementBackupsInProgress(nodeID uuid.UUID) error {
 	ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
 	defer cancel()
 
-	key := fmt.Sprintf("%s%s%s", nodeActiveTasksPrefix, nodeID, nodeActiveTasksSuffix)
+	key := fmt.Sprintf("%s%s%s", nodeActiveBackupsPrefix, nodeID.String(), nodeActiveBackupsSuffix)
 	result := r.client.Do(ctx, r.client.B().Decr().Key(key).Build())
 
 	if result.Error() != nil {
 		return fmt.Errorf(
-			"failed to decrement tasks in progress for node %s: %w",
+			"failed to decrement backups in progress for node %s: %w",
 			nodeID,
 			result.Error(),
 		)
@@ -279,13 +276,13 @@ func (r *TaskNodesRegistry) DecrementTasksInProgress(nodeID string) error {
 		setCtx, setCancel := context.WithTimeout(context.Background(), r.timeout)
 		r.client.Do(setCtx, r.client.B().Set().Key(key).Value("0").Build())
 		setCancel()
-		r.logger.Warn("Active tasks counter went below 0, reset to 0", "nodeID", nodeID)
+		r.logger.Warn("Active backups counter went below 0, reset to 0", "nodeID", nodeID)
 	}
 
 	return nil
 }
 
-func (r *TaskNodesRegistry) HearthbeatNodeInRegistry(now time.Time, node TaskNode) error {
+func (r *BackupNodesRegistry) HearthbeatNodeInRegistry(now time.Time, backupNode BackupNode) error {
 	if now.IsZero() {
 		return fmt.Errorf("cannot register node with zero heartbeat timestamp")
 	}
@@ -293,36 +290,36 @@ func (r *TaskNodesRegistry) HearthbeatNodeInRegistry(now time.Time, node TaskNod
 	ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
 	defer cancel()
 
-	node.LastHeartbeat = now
+	backupNode.LastHeartbeat = now
 
-	data, err := json.Marshal(node)
+	data, err := json.Marshal(backupNode)
 	if err != nil {
-		return fmt.Errorf("failed to marshal node: %w", err)
+		return fmt.Errorf("failed to marshal backup node: %w", err)
 	}
 
-	key := fmt.Sprintf("%s%s%s", nodeInfoKeyPrefix, node.ID.String(), nodeInfoKeySuffix)
+	key := fmt.Sprintf("%s%s%s", nodeInfoKeyPrefix, backupNode.ID.String(), nodeInfoKeySuffix)
 	result := r.client.Do(
 		ctx,
 		r.client.B().Set().Key(key).Value(string(data)).Build(),
 	)
 
 	if result.Error() != nil {
-		return fmt.Errorf("failed to register node %s: %w", node.ID, result.Error())
+		return fmt.Errorf("failed to register node %s: %w", backupNode.ID, result.Error())
 	}
 
 	return nil
 }
 
-func (r *TaskNodesRegistry) UnregisterNodeFromRegistry(node TaskNode) error {
+func (r *BackupNodesRegistry) UnregisterNodeFromRegistry(backupNode BackupNode) error {
 	ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
 	defer cancel()
 
-	infoKey := fmt.Sprintf("%s%s%s", nodeInfoKeyPrefix, node.ID.String(), nodeInfoKeySuffix)
+	infoKey := fmt.Sprintf("%s%s%s", nodeInfoKeyPrefix, backupNode.ID.String(), nodeInfoKeySuffix)
 	counterKey := fmt.Sprintf(
 		"%s%s%s",
-		nodeActiveTasksPrefix,
-		node.ID.String(),
-		nodeActiveTasksSuffix,
+		nodeActiveBackupsPrefix,
+		backupNode.ID.String(),
+		nodeActiveBackupsSuffix,
 	)
 
 	result := r.client.Do(
@@ -331,49 +328,49 @@ func (r *TaskNodesRegistry) UnregisterNodeFromRegistry(node TaskNode) error {
 	)
 
 	if result.Error() != nil {
-		return fmt.Errorf("failed to unregister node %s: %w", node.ID, result.Error())
+		return fmt.Errorf("failed to unregister node %s: %w", backupNode.ID, result.Error())
 	}
 
-	r.logger.Info("Unregistered node from registry", "nodeID", node.ID)
+	r.logger.Info("Unregistered node from registry", "nodeID", backupNode.ID)
 	return nil
 }
 
-func (r *TaskNodesRegistry) AssignTaskToNode(
-	targetNodeID string,
-	taskID uuid.UUID,
+func (r *BackupNodesRegistry) AssignBackupToNode(
+	targetNodeID uuid.UUID,
+	backupID uuid.UUID,
 	isCallNotifier bool,
 ) error {
 	ctx := context.Background()
 
-	message := TaskSubmitMessage{
+	message := BackupSubmitMessage{
 		NodeID:         targetNodeID,
-		TaskID:         taskID.String(),
+		BackupID:       backupID,
 		IsCallNotifier: isCallNotifier,
 	}
 
 	messageJSON, err := json.Marshal(message)
 	if err != nil {
-		return fmt.Errorf("failed to marshal task submit message: %w", err)
+		return fmt.Errorf("failed to marshal backup submit message: %w", err)
 	}
 
-	err = r.pubsubTasks.Publish(ctx, taskSubmitChannel, string(messageJSON))
+	err = r.pubsubBackups.Publish(ctx, backupSubmitChannel, string(messageJSON))
 	if err != nil {
-		return fmt.Errorf("failed to publish task submit message: %w", err)
+		return fmt.Errorf("failed to publish backup submit message: %w", err)
 	}
 
 	return nil
 }
 
-func (r *TaskNodesRegistry) SubscribeNodeForTasksAssignment(
-	nodeID string,
-	handler func(taskID uuid.UUID, isCallNotifier bool),
+func (r *BackupNodesRegistry) SubscribeNodeForBackupsAssignment(
+	nodeID uuid.UUID,
+	handler func(backupID uuid.UUID, isCallNotifier bool),
 ) error {
 	ctx := context.Background()
 
 	wrappedHandler := func(message string) {
-		var msg TaskSubmitMessage
+		var msg BackupSubmitMessage
 		if err := json.Unmarshal([]byte(message), &msg); err != nil {
-			r.logger.Warn("Failed to unmarshal task submit message", "error", err)
+			r.logger.Warn("Failed to unmarshal backup submit message", "error", err)
 			return
 		}
 
@@ -381,108 +378,84 @@ func (r *TaskNodesRegistry) SubscribeNodeForTasksAssignment(
 			return
 		}
 
-		taskID, err := uuid.Parse(msg.TaskID)
-		if err != nil {
-			r.logger.Warn(
-				"Failed to parse task ID from message",
-				"taskId",
-				msg.TaskID,
-				"error",
-				err,
-			)
-			return
-		}
-
-		handler(taskID, msg.IsCallNotifier)
+		handler(msg.BackupID, msg.IsCallNotifier)
 	}
 
-	err := r.pubsubTasks.Subscribe(ctx, taskSubmitChannel, wrappedHandler)
+	err := r.pubsubBackups.Subscribe(ctx, backupSubmitChannel, wrappedHandler)
 	if err != nil {
-		return fmt.Errorf("failed to subscribe to task submit channel: %w", err)
+		return fmt.Errorf("failed to subscribe to backup submit channel: %w", err)
 	}
 
-	r.logger.Info("Subscribed to task submit channel", "nodeID", nodeID)
+	r.logger.Info("Subscribed to backup submit channel", "nodeID", nodeID)
 	return nil
 }
 
-func (r *TaskNodesRegistry) UnsubscribeNodeForTasksAssignments() error {
-	err := r.pubsubTasks.Close()
+func (r *BackupNodesRegistry) UnsubscribeNodeForBackupsAssignments() error {
+	err := r.pubsubBackups.Close()
 	if err != nil {
-		return fmt.Errorf("failed to unsubscribe from task submit channel: %w", err)
+		return fmt.Errorf("failed to unsubscribe from backup submit channel: %w", err)
 	}
 
-	r.logger.Info("Unsubscribed from task submit channel")
+	r.logger.Info("Unsubscribed from backup submit channel")
 	return nil
 }
 
-func (r *TaskNodesRegistry) PublishTaskCompletion(nodeID string, taskID uuid.UUID) error {
+func (r *BackupNodesRegistry) PublishBackupCompletion(nodeID uuid.UUID, backupID uuid.UUID) error {
 	ctx := context.Background()
 
-	message := TaskCompletionMessage{
-		NodeID: nodeID,
-		TaskID: taskID.String(),
+	message := BackupCompletionMessage{
+		NodeID:   nodeID,
+		BackupID: backupID,
 	}
 
 	messageJSON, err := json.Marshal(message)
 	if err != nil {
-		return fmt.Errorf("failed to marshal task completion message: %w", err)
+		return fmt.Errorf("failed to marshal backup completion message: %w", err)
 	}
 
-	err = r.pubsubCompletions.Publish(ctx, taskCompletionChannel, string(messageJSON))
+	err = r.pubsubCompletions.Publish(ctx, backupCompletionChannel, string(messageJSON))
 	if err != nil {
-		return fmt.Errorf("failed to publish task completion message: %w", err)
+		return fmt.Errorf("failed to publish backup completion message: %w", err)
 	}
 
 	return nil
 }
 
-func (r *TaskNodesRegistry) SubscribeForTasksCompletions(
-	handler func(nodeID string, taskID uuid.UUID),
+func (r *BackupNodesRegistry) SubscribeForBackupsCompletions(
+	handler func(nodeID uuid.UUID, backupID uuid.UUID),
 ) error {
 	ctx := context.Background()
 
 	wrappedHandler := func(message string) {
-		var msg TaskCompletionMessage
+		var msg BackupCompletionMessage
 		if err := json.Unmarshal([]byte(message), &msg); err != nil {
-			r.logger.Warn("Failed to unmarshal task completion message", "error", err)
+			r.logger.Warn("Failed to unmarshal backup completion message", "error", err)
 			return
 		}
 
-		taskID, err := uuid.Parse(msg.TaskID)
-		if err != nil {
-			r.logger.Warn(
-				"Failed to parse task ID from completion message",
-				"taskId",
-				msg.TaskID,
-				"error",
-				err,
-			)
-			return
-		}
-
-		handler(msg.NodeID, taskID)
+		handler(msg.NodeID, msg.BackupID)
 	}
 
-	err := r.pubsubCompletions.Subscribe(ctx, taskCompletionChannel, wrappedHandler)
+	err := r.pubsubCompletions.Subscribe(ctx, backupCompletionChannel, wrappedHandler)
 	if err != nil {
-		return fmt.Errorf("failed to subscribe to task completion channel: %w", err)
+		return fmt.Errorf("failed to subscribe to backup completion channel: %w", err)
 	}
 
-	r.logger.Info("Subscribed to task completion channel")
+	r.logger.Info("Subscribed to backup completion channel")
 	return nil
 }
 
-func (r *TaskNodesRegistry) UnsubscribeForTasksCompletions() error {
+func (r *BackupNodesRegistry) UnsubscribeForBackupsCompletions() error {
 	err := r.pubsubCompletions.Close()
 	if err != nil {
-		return fmt.Errorf("failed to unsubscribe from task completion channel: %w", err)
+		return fmt.Errorf("failed to unsubscribe from backup completion channel: %w", err)
 	}
 
-	r.logger.Info("Unsubscribed from task completion channel")
+	r.logger.Info("Unsubscribed from backup completion channel")
 	return nil
 }
 
-func (r *TaskNodesRegistry) extractNodeIDFromKey(key, prefix, suffix string) uuid.UUID {
+func (r *BackupNodesRegistry) extractNodeIDFromKey(key, prefix, suffix string) uuid.UUID {
 	nodeIDStr := strings.TrimPrefix(key, prefix)
 	nodeIDStr = strings.TrimSuffix(nodeIDStr, suffix)
 
@@ -495,7 +468,7 @@ func (r *TaskNodesRegistry) extractNodeIDFromKey(key, prefix, suffix string) uui
 	return nodeID
 }
 
-func (r *TaskNodesRegistry) pipelineGetKeys(keys []string) (map[string][]byte, error) {
+func (r *BackupNodesRegistry) pipelineGetKeys(keys []string) (map[string][]byte, error) {
 	if len(keys) == 0 {
 		return make(map[string][]byte), nil
 	}
@@ -529,7 +502,7 @@ func (r *TaskNodesRegistry) pipelineGetKeys(keys []string) (map[string][]byte, e
 	return keyDataMap, nil
 }
 
-func (r *TaskNodesRegistry) parseIntFromBytes(data []byte) (int64, error) {
+func (r *BackupNodesRegistry) parseIntFromBytes(data []byte) (int64, error) {
 	str := string(data)
 	var count int64
 	_, err := fmt.Sscanf(str, "%d", &count)
@@ -539,7 +512,7 @@ func (r *TaskNodesRegistry) parseIntFromBytes(data []byte) (int64, error) {
 	return count, nil
 }
 
-func (r *TaskNodesRegistry) cleanupDeadNodes() error {
+func (r *BackupNodesRegistry) cleanupDeadNodes() error {
 	ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
 	defer cancel()
 
@@ -583,13 +556,12 @@ func (r *TaskNodesRegistry) cleanupDeadNodes() error {
 	var deadNodeKeys []string
 
 	for key, data := range keyDataMap {
-
 		// Skip if the key doesn't exist (data is empty)
 		if len(data) == 0 {
 			continue
 		}
 
-		var node TaskNode
+		var node BackupNode
 		if err := json.Unmarshal(data, &node); err != nil {
 			r.logger.Warn("Failed to unmarshal node data during cleanup", "key", key, "error", err)
 			continue
@@ -603,7 +575,12 @@ func (r *TaskNodesRegistry) cleanupDeadNodes() error {
 		if node.LastHeartbeat.Before(threshold) {
 			nodeID := node.ID.String()
 			infoKey := fmt.Sprintf("%s%s%s", nodeInfoKeyPrefix, nodeID, nodeInfoKeySuffix)
-			statsKey := fmt.Sprintf("%s%s%s", nodeActiveTasksPrefix, nodeID, nodeActiveTasksSuffix)
+			statsKey := fmt.Sprintf(
+				"%s%s%s",
+				nodeActiveBackupsPrefix,
+				nodeID,
+				nodeActiveBackupsSuffix,
+			)
 
 			deadNodeKeys = append(deadNodeKeys, infoKey, statsKey)
 			r.logger.Info(
