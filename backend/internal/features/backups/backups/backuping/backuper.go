@@ -8,7 +8,6 @@ import (
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/storages"
 	tasks_cancellation "databasus-backend/internal/features/tasks/cancellation"
-	task_registry "databasus-backend/internal/features/tasks/registry"
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
 	util_encryption "databasus-backend/internal/util/encryption"
 	"errors"
@@ -35,7 +34,7 @@ type BackuperNode struct {
 	storageService      *storages.StorageService
 	notificationSender  backups_core.NotificationSender
 	backupCancelManager *tasks_cancellation.TaskCancelManager
-	tasksRegistry       *task_registry.TaskNodesRegistry
+	backupNodesRegistry *BackupNodesRegistry
 	logger              *slog.Logger
 	createBackupUseCase backups_core.CreateBackupUsecase
 	nodeID              uuid.UUID
@@ -48,19 +47,20 @@ func (n *BackuperNode) Run(ctx context.Context) {
 
 	throughputMBs := config.GetEnv().NodeNetworkThroughputMBs
 
-	backupNode := task_registry.TaskNode{
+	backupNode := BackupNode{
 		ID:            n.nodeID,
 		ThroughputMBs: throughputMBs,
+		LastHeartbeat: time.Now().UTC(),
 	}
 
-	if err := n.tasksRegistry.HearthbeatNodeInRegistry(time.Now().UTC(), backupNode); err != nil {
+	if err := n.backupNodesRegistry.HearthbeatNodeInRegistry(time.Now().UTC(), backupNode); err != nil {
 		n.logger.Error("Failed to register node in registry", "error", err)
 		panic(err)
 	}
 
 	backupHandler := func(backupID uuid.UUID, isCallNotifier bool) {
 		n.MakeBackup(backupID, isCallNotifier)
-		if err := n.tasksRegistry.PublishTaskCompletion(n.nodeID.String(), backupID); err != nil {
+		if err := n.backupNodesRegistry.PublishBackupCompletion(n.nodeID, backupID); err != nil {
 			n.logger.Error(
 				"Failed to publish backup completion",
 				"error",
@@ -71,12 +71,13 @@ func (n *BackuperNode) Run(ctx context.Context) {
 		}
 	}
 
-	if err := n.tasksRegistry.SubscribeNodeForTasksAssignment(n.nodeID.String(), backupHandler); err != nil {
+	err := n.backupNodesRegistry.SubscribeNodeForBackupsAssignment(n.nodeID, backupHandler)
+	if err != nil {
 		n.logger.Error("Failed to subscribe to backup assignments", "error", err)
 		panic(err)
 	}
 	defer func() {
-		if err := n.tasksRegistry.UnsubscribeNodeForTasksAssignments(); err != nil {
+		if err := n.backupNodesRegistry.UnsubscribeNodeForBackupsAssignments(); err != nil {
 			n.logger.Error("Failed to unsubscribe from backup assignments", "error", err)
 		}
 	}()
@@ -91,7 +92,7 @@ func (n *BackuperNode) Run(ctx context.Context) {
 		case <-ctx.Done():
 			n.logger.Info("Shutdown signal received, unregistering node", "nodeID", n.nodeID)
 
-			if err := n.tasksRegistry.UnregisterNodeFromRegistry(backupNode); err != nil {
+			if err := n.backupNodesRegistry.UnregisterNodeFromRegistry(backupNode); err != nil {
 				n.logger.Error("Failed to unregister node from registry", "error", err)
 			}
 
@@ -357,9 +358,9 @@ func (n *BackuperNode) SendBackupNotification(
 	}
 }
 
-func (n *BackuperNode) sendHeartbeat(backupNode *task_registry.TaskNode) {
+func (n *BackuperNode) sendHeartbeat(backupNode *BackupNode) {
 	n.lastHeartbeat = time.Now().UTC()
-	if err := n.tasksRegistry.HearthbeatNodeInRegistry(time.Now().UTC(), *backupNode); err != nil {
+	if err := n.backupNodesRegistry.HearthbeatNodeInRegistry(time.Now().UTC(), *backupNode); err != nil {
 		n.logger.Error("Failed to send heartbeat", "error", err)
 	}
 }

@@ -75,3 +75,23 @@ func WaitForBackupCompletion(
 
 	t.Logf("WaitForBackupCompletion: timeout waiting for backup to complete")
 }
+
+// CreateTestBackup creates a simple test backup record for testing purposes
+func CreateTestBackup(databaseID, storageID uuid.UUID) *backups_core.Backup {
+	backup := &backups_core.Backup{
+		ID:               uuid.New(),
+		DatabaseID:       databaseID,
+		StorageID:        storageID,
+		Status:           backups_core.BackupStatusCompleted,
+		BackupSizeMb:     10.5,
+		BackupDurationMs: 1000,
+		CreatedAt:        time.Now().UTC(),
+	}
+
+	repo := &backups_core.BackupRepository{}
+	if err := repo.Save(backup); err != nil {
+		panic(err)
+	}
+
+	return backup
+}

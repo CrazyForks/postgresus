@@ -21,9 +21,7 @@ import (
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	mariadbtypes "databasus-backend/internal/features/databases/databases/mariadb"
-	"databasus-backend/internal/features/restores"
-	restores_enums "databasus-backend/internal/features/restores/enums"
-	restores_models "databasus-backend/internal/features/restores/models"
+	restores_core "databasus-backend/internal/features/restores/core"
 	"databasus-backend/internal/features/storages"
 	users_enums "databasus-backend/internal/features/users/enums"
 	users_testing "databasus-backend/internal/features/users/testing"
@@ -213,7 +211,7 @@ func testMariadbBackupRestoreForVersion(
 	)
 
 	restore := waitForMariadbRestoreCompletion(t, router, backup.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, restores_enums.RestoreStatusCompleted, restore.Status)
+	assert.Equal(t, restores_core.RestoreStatusCompleted, restore.Status)
 
 	var tableExists int
 	err = newDB.Get(
@@ -311,7 +309,7 @@ func testMariadbBackupRestoreWithEncryptionForVersion(
 	)
 
 	restore := waitForMariadbRestoreCompletion(t, router, backup.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, restores_enums.RestoreStatusCompleted, restore.Status)
+	assert.Equal(t, restores_core.RestoreStatusCompleted, restore.Status)
 
 	var tableExists int
 	err = newDB.Get(
@@ -418,7 +416,7 @@ func testMariadbBackupRestoreWithReadOnlyUserForVersion(
 	)
 
 	restore := waitForMariadbRestoreCompletion(t, router, backup.ID, user.Token, 5*time.Minute)
-	assert.Equal(t, restores_enums.RestoreStatusCompleted, restore.Status)
+	assert.Equal(t, restores_core.RestoreStatusCompleted, restore.Status)
 
 	var tableExists int
 	err = newDB.Get(
@@ -506,7 +504,7 @@ func createMariadbRestoreViaAPI(
 	version tools.MariadbVersion,
 	token string,
 ) {
-	request := restores.RestoreBackupRequest{
+	request := restores_core.RestoreBackupRequest{
 		MariadbDatabase: &mariadbtypes.MariadbDatabase{
 			Host:     host,
 			Port:     port,
@@ -533,7 +531,7 @@ func waitForMariadbRestoreCompletion(
 	backupID uuid.UUID,
 	token string,
 	timeout time.Duration,
-) *restores_models.Restore {
+) *restores_core.Restore {
 	startTime := time.Now()
 	pollInterval := 500 * time.Millisecond
 
@@ -542,7 +540,7 @@ func waitForMariadbRestoreCompletion(
 			t.Fatalf("Timeout waiting for MariaDB restore completion after %v", timeout)
 		}
 
-		var restoresList []*restores_models.Restore
+		var restoresList []*restores_core.Restore
 		test_utils.MakeGetRequestAndUnmarshal(
 			t,
 			router,
@@ -553,10 +551,10 @@ func waitForMariadbRestoreCompletion(
 		)
 
 		for _, restore := range restoresList {
-			if restore.Status == restores_enums.RestoreStatusCompleted {
+			if restore.Status == restores_core.RestoreStatusCompleted {
 				return restore
 			}
-			if restore.Status == restores_enums.RestoreStatusFailed {
+			if restore.Status == restores_core.RestoreStatusFailed {
 				failMsg := "unknown error"
 				if restore.FailMessage != nil {
 					failMsg = *restore.FailMessage

@@ -1,4 +1,4 @@
-package enums
+package restores_core
 
 type RestoreStatus string
 

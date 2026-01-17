@@ -1,8 +1,6 @@
-package restores
+package restores_core
 
 import (
-	"databasus-backend/internal/features/restores/enums"
-	"databasus-backend/internal/features/restores/models"
 	"databasus-backend/internal/storage"
 
 	"github.com/google/uuid"
@@ -10,24 +8,24 @@ import (
 
 type RestoreRepository struct{}
 
-func (r *RestoreRepository) Save(restore *models.Restore) error {
+func (r *RestoreRepository) Save(restore *Restore) error {
 	db := storage.GetDb()
 
 	isNew := restore.ID == uuid.Nil
 	if isNew {
 		restore.ID = uuid.New()
 		return db.Create(restore).
-			Omit("Backup").
+			Omit("Backup", "PostgresqlDatabase", "MysqlDatabase", "MariadbDatabase", "MongodbDatabase").
 			Error
 	}
 
 	return db.Save(restore).
-		Omit("Backup").
+		Omit("Backup", "PostgresqlDatabase", "MysqlDatabase", "MariadbDatabase", "MongodbDatabase").
 		Error
 }
 
-func (r *RestoreRepository) FindByBackupID(backupID uuid.UUID) ([]*models.Restore, error) {
-	var restores []*models.Restore
+func (r *RestoreRepository) FindByBackupID(backupID uuid.UUID) ([]*Restore, error) {
+	var restores []*Restore
 
 	if err := storage.
 		GetDb().
@@ -41,8 +39,8 @@ func (r *RestoreRepository) FindByBackupID(backupID uuid.UUID) ([]*models.Restor
 	return restores, nil
 }
 
-func (r *RestoreRepository) FindByID(id uuid.UUID) (*models.Restore, error) {
-	var restore models.Restore
+func (r *RestoreRepository) FindByID(id uuid.UUID) (*Restore, error) {
+	var restore Restore
 
 	if err := storage.
 		GetDb().
@@ -55,8 +53,8 @@ func (r *RestoreRepository) FindByID(id uuid.UUID) (*models.Restore, error) {
 	return &restore, nil
 }
 
-func (r *RestoreRepository) FindByStatus(status enums.RestoreStatus) ([]*models.Restore, error) {
-	var restores []*models.Restore
+func (r *RestoreRepository) FindByStatus(status RestoreStatus) ([]*Restore, error) {
+	var restores []*Restore
 
 	if err := storage.
 		GetDb().
@@ -71,5 +69,5 @@ func (r *RestoreRepository) FindByStatus(status enums.RestoreStatus) ([]*models.
 }
 
 func (r *RestoreRepository) DeleteByID(id uuid.UUID) error {
-	return storage.GetDb().Delete(&models.Restore{}, "id = ?", id).Error
+	return storage.GetDb().Delete(&Restore{}, "id = ?", id).Error
 }

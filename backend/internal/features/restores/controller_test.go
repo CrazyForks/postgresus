@@ -18,20 +18,18 @@ import (
 
 	"databasus-backend/internal/config"
 	audit_logs "databasus-backend/internal/features/audit_logs"
-	"databasus-backend/internal/features/backups/backups"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/databases/databases/mysql"
 	"databasus-backend/internal/features/databases/databases/postgresql"
-	"databasus-backend/internal/features/restores/models"
+	restores_core "databasus-backend/internal/features/restores/core"
 	"databasus-backend/internal/features/storages"
 	local_storage "databasus-backend/internal/features/storages/models/local"
 	users_dto "databasus-backend/internal/features/users/dto"
 	users_enums "databasus-backend/internal/features/users/enums"
 	users_services "databasus-backend/internal/features/users/services"
 	users_testing "databasus-backend/internal/features/users/testing"
-	workspaces_controllers "databasus-backend/internal/features/workspaces/controllers"
 	workspaces_models "databasus-backend/internal/features/workspaces/models"
 	workspaces_testing "databasus-backend/internal/features/workspaces/testing"
 	util_encryption "databasus-backend/internal/util/encryption"
@@ -46,7 +44,7 @@ func Test_GetRestores_WhenUserIsWorkspaceMember_RestoresReturned(t *testing.T) {
 
 	database, backup := createTestDatabaseWithBackupForRestore(workspace, owner, router)
 
-	var restores []*models.Restore
+	var restores []*restores_core.Restore
 	test_utils.MakeGetRequestAndUnmarshal(
 		t,
 		router,
@@ -90,7 +88,7 @@ func Test_GetRestores_WhenUserIsGlobalAdmin_RestoresReturned(t *testing.T) {
 
 	admin := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
 
-	var restores []*models.Restore
+	var restores []*restores_core.Restore
 	test_utils.MakeGetRequestAndUnmarshal(
 		t,
 		router,
@@ -105,12 +103,16 @@ func Test_GetRestores_WhenUserIsGlobalAdmin_RestoresReturned(t *testing.T) {
 
 func Test_RestoreBackup_WhenUserIsWorkspaceMember_RestoreInitiated(t *testing.T) {
 	router := createTestRouter()
+
+	_, cleanup := SetupMockRestoreNode(t)
+	defer cleanup()
+
 	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
 	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
 
 	_, backup := createTestDatabaseWithBackupForRestore(workspace, owner, router)
 
-	request := RestoreBackupRequest{
+	request := restores_core.RestoreBackupRequest{
 		PostgresqlDatabase: &postgresql.PostgresqlDatabase{
 			Version:  tools.PostgresqlVersion16,
 			Host:     "localhost",
@@ -141,7 +143,7 @@ func Test_RestoreBackup_WhenUserIsNotWorkspaceMember_ReturnsForbidden(t *testing
 
 	nonMember := users_testing.CreateTestUser(users_enums.UserRoleMember)
 
-	request := RestoreBackupRequest{
+	request := restores_core.RestoreBackupRequest{
 		PostgresqlDatabase: &postgresql.PostgresqlDatabase{
 			Version:  tools.PostgresqlVersion16,
 			Host:     "localhost",
@@ -165,12 +167,16 @@ func Test_RestoreBackup_WhenUserIsNotWorkspaceMember_ReturnsForbidden(t *testing
 
 func Test_RestoreBackup_WithIsExcludeExtensions_FlagPassedCorrectly(t *testing.T) {
 	router := createTestRouter()
+
+	_, cleanup := SetupMockRestoreNode(t)
+	defer cleanup()
+
 	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
 	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
 
 	_, backup := createTestDatabaseWithBackupForRestore(workspace, owner, router)
 
-	request := RestoreBackupRequest{
+	request := restores_core.RestoreBackupRequest{
 		PostgresqlDatabase: &postgresql.PostgresqlDatabase{
 			Version:             tools.PostgresqlVersion16,
 			Host:                "localhost",
@@ -195,12 +201,16 @@ func Test_RestoreBackup_WithIsExcludeExtensions_FlagPassedCorrectly(t *testing.T
 
 func Test_RestoreBackup_AuditLogWritten(t *testing.T) {
 	router := createTestRouter()
+
+	_, cleanup := SetupMockRestoreNode(t)
+	defer cleanup()
+
 	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
 	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
 
 	database, backup := createTestDatabaseWithBackupForRestore(workspace, owner, router)
 
-	request := RestoreBackupRequest{
+	request := restores_core.RestoreBackupRequest{
 		PostgresqlDatabase: &postgresql.PostgresqlDatabase{
 			Version:  tools.PostgresqlVersion16,
 			Host:     "localhost",
@@ -272,15 +282,22 @@ func Test_RestoreBackup_DiskSpaceValidation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			router := createTestRouter()
+
+			// Setup mock node for tests that skip disk validation and reach scheduler
+			if !tc.expectDiskValidated {
+				_, cleanup := SetupMockRestoreNode(t)
+				defer cleanup()
+			}
+
 			owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
 			workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
 
 			var backup *backups_core.Backup
-			var request RestoreBackupRequest
+			var request restores_core.RestoreBackupRequest
 
 			if tc.dbType == databases.DatabaseTypePostgres {
 				_, backup = createTestDatabaseWithBackupForRestore(workspace, owner, router)
-				request = RestoreBackupRequest{
+				request = restores_core.RestoreBackupRequest{
 					PostgresqlDatabase: &postgresql.PostgresqlDatabase{
 						Version:  tools.PostgresqlVersion16,
 						Host:     "localhost",
@@ -310,7 +327,7 @@ func Test_RestoreBackup_DiskSpaceValidation(t *testing.T) {
 				assert.NoError(t, err)
 
 				backup = createTestBackup(mysqlDB, owner)
-				request = RestoreBackupRequest{
+				request = restores_core.RestoreBackupRequest{
 					MysqlDatabase: &mysql.MysqlDatabase{
 						Version:  tools.MysqlVersion80,
 						Host:     "localhost",
@@ -354,15 +371,7 @@ func Test_RestoreBackup_DiskSpaceValidation(t *testing.T) {
 }
 
 func createTestRouter() *gin.Engine {
-	router := workspaces_testing.CreateTestRouter(
-		workspaces_controllers.GetWorkspaceController(),
-		workspaces_controllers.GetMembershipController(),
-		databases.GetDatabaseController(),
-		backups_config.GetBackupConfigController(),
-		backups.GetBackupController(),
-		GetRestoreController(),
-	)
-	return router
+	return CreateTestRouter()
 }
 
 func createTestDatabaseWithBackupForRestore(

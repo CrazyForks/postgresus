@@ -7,7 +7,6 @@ import (
 	"databasus-backend/internal/features/intervals"
 	"databasus-backend/internal/features/notifiers"
 	"databasus-backend/internal/features/storages"
-	task_registry "databasus-backend/internal/features/tasks/registry"
 	users_enums "databasus-backend/internal/features/users/enums"
 	users_testing "databasus-backend/internal/features/users/testing"
 	workspaces_testing "databasus-backend/internal/features/workspaces/testing"
@@ -466,7 +465,7 @@ func Test_CheckDeadNodesAndFailBackups_WhenNodeDies_FailsBackupAndCleansUpRegist
 
 		// Clean up mock node
 		if mockNodeID != uuid.Nil {
-			nodesRegistry.UnregisterNodeFromRegistry(task_registry.TaskNode{ID: mockNodeID})
+			backupNodesRegistry.UnregisterNodeFromRegistry(BackupNode{ID: mockNodeID})
 		}
 		cache_utils.ClearAllCache()
 	}()
@@ -502,12 +501,12 @@ func Test_CheckDeadNodesAndFailBackups_WhenNodeDies_FailsBackupAndCleansUpRegist
 	assert.Equal(t, backups_core.BackupStatusInProgress, backups[0].Status)
 
 	// Verify Valkey counter was incremented when backup was assigned
-	stats, err := nodesRegistry.GetNodesStats()
+	stats, err := backupNodesRegistry.GetBackupNodesStats()
 	assert.NoError(t, err)
 	foundStat := false
 	for _, stat := range stats {
 		if stat.ID == mockNodeID {
-			assert.Equal(t, 1, stat.ActiveTasks)
+			assert.Equal(t, 1, stat.ActiveBackups)
 			foundStat = true
 			break
 		}
@@ -532,11 +531,11 @@ func Test_CheckDeadNodesAndFailBackups_WhenNodeDies_FailsBackupAndCleansUpRegist
 	assert.Contains(t, *backups[0].FailMessage, "node unavailability")
 
 	// Verify Valkey counter was decremented after backup failed
-	stats, err = nodesRegistry.GetNodesStats()
+	stats, err = backupNodesRegistry.GetBackupNodesStats()
 	assert.NoError(t, err)
 	for _, stat := range stats {
 		if stat.ID == mockNodeID {
-			assert.Equal(t, 0, stat.ActiveTasks)
+			assert.Equal(t, 0, stat.ActiveBackups)
 		}
 	}
 
@@ -569,7 +568,7 @@ func Test_OnBackupCompleted_WhenTaskIsNotBackup_SkipsProcessing(t *testing.T) {
 
 		// Clean up mock node
 		if mockNodeID != uuid.Nil {
-			nodesRegistry.UnregisterNodeFromRegistry(task_registry.TaskNode{ID: mockNodeID})
+			backupNodesRegistry.UnregisterNodeFromRegistry(BackupNode{ID: mockNodeID})
 		}
 		cache_utils.ClearAllCache()
 	}()
@@ -605,12 +604,12 @@ func Test_OnBackupCompleted_WhenTaskIsNotBackup_SkipsProcessing(t *testing.T) {
 	assert.Equal(t, backups_core.BackupStatusInProgress, backups[0].Status)
 
 	// Get initial state of the registry
-	initialStats, err := nodesRegistry.GetNodesStats()
+	initialStats, err := backupNodesRegistry.GetBackupNodesStats()
 	assert.NoError(t, err)
 	var initialActiveTasks int
 	for _, stat := range initialStats {
 		if stat.ID == mockNodeID {
-			initialActiveTasks = stat.ActiveTasks
+			initialActiveTasks = stat.ActiveBackups
 			break
 		}
 	}
@@ -618,16 +617,16 @@ func Test_OnBackupCompleted_WhenTaskIsNotBackup_SkipsProcessing(t *testing.T) {
 
 	// Call onBackupCompleted with a random UUID (not a backup ID)
 	nonBackupTaskID := uuid.New()
-	GetBackupsScheduler().onBackupCompleted(mockNodeID.String(), nonBackupTaskID)
+	GetBackupsScheduler().onBackupCompleted(mockNodeID, nonBackupTaskID)
 
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify: Active tasks counter should remain the same (not decremented)
-	stats, err := nodesRegistry.GetNodesStats()
+	stats, err := backupNodesRegistry.GetBackupNodesStats()
 	assert.NoError(t, err)
 	for _, stat := range stats {
 		if stat.ID == mockNodeID {
-			assert.Equal(t, initialActiveTasks, stat.ActiveTasks,
+			assert.Equal(t, initialActiveTasks, stat.ActiveBackups,
 				"Active tasks should not change for non-backup task")
 		}
 	}
@@ -658,9 +657,9 @@ func Test_CalculateLeastBusyNode_SelectsNodeWithBestScore(t *testing.T) {
 
 		defer func() {
 			// Clean up all mock nodes
-			nodesRegistry.UnregisterNodeFromRegistry(task_registry.TaskNode{ID: node1ID})
-			nodesRegistry.UnregisterNodeFromRegistry(task_registry.TaskNode{ID: node2ID})
-			nodesRegistry.UnregisterNodeFromRegistry(task_registry.TaskNode{ID: node3ID})
+			backupNodesRegistry.UnregisterNodeFromRegistry(BackupNode{ID: node1ID})
+			backupNodesRegistry.UnregisterNodeFromRegistry(BackupNode{ID: node2ID})
+			backupNodesRegistry.UnregisterNodeFromRegistry(BackupNode{ID: node3ID})
 			cache_utils.ClearAllCache()
 		}()
 
@@ -672,17 +671,17 @@ func Test_CalculateLeastBusyNode_SelectsNodeWithBestScore(t *testing.T) {
 		assert.NoError(t, err)
 
 		for range 5 {
-			err = nodesRegistry.IncrementTasksInProgress(node1ID.String())
+			err = backupNodesRegistry.IncrementBackupsInProgress(node1ID)
 			assert.NoError(t, err)
 		}
 
 		for range 2 {
-			err = nodesRegistry.IncrementTasksInProgress(node2ID.String())
+			err = backupNodesRegistry.IncrementBackupsInProgress(node2ID)
 			assert.NoError(t, err)
 		}
 
 		for range 8 {
-			err = nodesRegistry.IncrementTasksInProgress(node3ID.String())
+			err = backupNodesRegistry.IncrementBackupsInProgress(node3ID)
 			assert.NoError(t, err)
 		}
 
@@ -701,8 +700,8 @@ func Test_CalculateLeastBusyNode_SelectsNodeWithBestScore(t *testing.T) {
 
 		defer func() {
 			// Clean up all mock nodes
-			nodesRegistry.UnregisterNodeFromRegistry(task_registry.TaskNode{ID: node100MBsID})
-			nodesRegistry.UnregisterNodeFromRegistry(task_registry.TaskNode{ID: node50MBsID})
+			backupNodesRegistry.UnregisterNodeFromRegistry(BackupNode{ID: node100MBsID})
+			backupNodesRegistry.UnregisterNodeFromRegistry(BackupNode{ID: node50MBsID})
 			cache_utils.ClearAllCache()
 		}()
 
@@ -712,11 +711,11 @@ func Test_CalculateLeastBusyNode_SelectsNodeWithBestScore(t *testing.T) {
 		assert.NoError(t, err)
 
 		for range 10 {
-			err = nodesRegistry.IncrementTasksInProgress(node100MBsID.String())
+			err = backupNodesRegistry.IncrementBackupsInProgress(node100MBsID)
 			assert.NoError(t, err)
 		}
 
-		err = nodesRegistry.IncrementTasksInProgress(node50MBsID.String())
+		err = backupNodesRegistry.IncrementBackupsInProgress(node50MBsID)
 		assert.NoError(t, err)
 
 		leastBusyNodeID, err := GetBackupsScheduler().calculateLeastBusyNode()
@@ -880,12 +879,12 @@ func Test_StartBackup_WhenBackupCompletes_DecrementsActiveTaskCount(t *testing.T
 	assert.NoError(t, err)
 
 	// Get initial active task count
-	stats, err := nodesRegistry.GetNodesStats()
+	stats, err := backupNodesRegistry.GetBackupNodesStats()
 	assert.NoError(t, err)
 	var initialActiveTasks int
 	for _, stat := range stats {
 		if stat.ID == backuperNode.nodeID {
-			initialActiveTasks = stat.ActiveTasks
+			initialActiveTasks = stat.ActiveBackups
 			break
 		}
 	}
@@ -913,12 +912,12 @@ func Test_StartBackup_WhenBackupCompletes_DecrementsActiveTaskCount(t *testing.T
 	assert.True(t, decreased, "Active task count should have decreased after backup completion")
 
 	// Verify final active task count equals initial count
-	finalStats, err := nodesRegistry.GetNodesStats()
+	finalStats, err := backupNodesRegistry.GetBackupNodesStats()
 	assert.NoError(t, err)
 	for _, stat := range finalStats {
 		if stat.ID == backuperNode.nodeID {
-			t.Logf("Final active tasks: %d", stat.ActiveTasks)
-			assert.Equal(t, initialActiveTasks, stat.ActiveTasks,
+			t.Logf("Final active tasks: %d", stat.ActiveBackups)
+			assert.Equal(t, initialActiveTasks, stat.ActiveBackups,
 				"Active task count should return to initial value after backup completion")
 			break
 		}
@@ -982,12 +981,12 @@ func Test_StartBackup_WhenBackupFails_DecrementsActiveTaskCount(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Get initial active task count
-	stats, err := nodesRegistry.GetNodesStats()
+	stats, err := backupNodesRegistry.GetBackupNodesStats()
 	assert.NoError(t, err)
 	var initialActiveTasks int
 	for _, stat := range stats {
 		if stat.ID == backuperNode.nodeID {
-			initialActiveTasks = stat.ActiveTasks
+			initialActiveTasks = stat.ActiveBackups
 			break
 		}
 	}
@@ -1019,12 +1018,12 @@ func Test_StartBackup_WhenBackupFails_DecrementsActiveTaskCount(t *testing.T) {
 	assert.True(t, decreased, "Active task count should have decreased after backup failure")
 
 	// Verify final active task count equals initial count
-	finalStats, err := nodesRegistry.GetNodesStats()
+	finalStats, err := backupNodesRegistry.GetBackupNodesStats()
 	assert.NoError(t, err)
 	for _, stat := range finalStats {
 		if stat.ID == backuperNode.nodeID {
-			t.Logf("Final active tasks: %d", stat.ActiveTasks)
-			assert.Equal(t, initialActiveTasks, stat.ActiveTasks,
+			t.Logf("Final active tasks: %d", stat.ActiveBackups)
+			assert.Equal(t, initialActiveTasks, stat.ActiveBackups,
 				"Active task count should return to initial value after backup failure")
 			break
 		}

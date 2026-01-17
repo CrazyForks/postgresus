@@ -1,7 +1,6 @@
 package backuping
 
 import (
-	"databasus-backend/internal/config"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	"databasus-backend/internal/features/backups/backups/usecases"
 	backups_config "databasus-backend/internal/features/backups/config"
@@ -9,8 +8,8 @@ import (
 	"databasus-backend/internal/features/notifiers"
 	"databasus-backend/internal/features/storages"
 	tasks_cancellation "databasus-backend/internal/features/tasks/cancellation"
-	task_registry "databasus-backend/internal/features/tasks/registry"
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
+	cache_utils "databasus-backend/internal/util/cache"
 	"databasus-backend/internal/util/encryption"
 	"databasus-backend/internal/util/logger"
 	"time"
@@ -22,16 +21,16 @@ var backupRepository = &backups_core.BackupRepository{}
 
 var taskCancelManager = tasks_cancellation.GetTaskCancelManager()
 
-var nodesRegistry = task_registry.GetTaskNodesRegistry()
+var backupNodesRegistry = &BackupNodesRegistry{
+	cache_utils.GetValkeyClient(),
+	logger.GetLogger(),
+	cache_utils.DefaultCacheTimeout,
+	cache_utils.NewPubSubManager(),
+	cache_utils.NewPubSubManager(),
+}
 
 func getNodeID() uuid.UUID {
-	nodeIDStr := config.GetEnv().NodeID
-	nodeID, err := uuid.Parse(nodeIDStr)
-	if err != nil {
-		logger.GetLogger().Error("Failed to parse node ID from config", "error", err)
-		panic(err)
-	}
-	return nodeID
+	return uuid.New()
 }
 
 var backuperNode = &BackuperNode{
@@ -43,7 +42,7 @@ var backuperNode = &BackuperNode{
 	storages.GetStorageService(),
 	notifiers.GetNotifierService(),
 	taskCancelManager,
-	nodesRegistry,
+	backupNodesRegistry,
 	logger.GetLogger(),
 	usecases.GetCreateBackupUsecase(),
 	getNodeID(),
@@ -51,15 +50,15 @@ var backuperNode = &BackuperNode{
 }
 
 var backupsScheduler = &BackupsScheduler{
-	backupRepository,
-	backups_config.GetBackupConfigService(),
-	storages.GetStorageService(),
-	taskCancelManager,
-	nodesRegistry,
-	time.Now().UTC(),
-	logger.GetLogger(),
-	make(map[uuid.UUID]BackupToNodeRelation),
-	backuperNode,
+	backupRepository:      backupRepository,
+	backupConfigService:   backups_config.GetBackupConfigService(),
+	storageService:        storages.GetStorageService(),
+	taskCancelManager:     taskCancelManager,
+	backupNodesRegistry:   backupNodesRegistry,
+	lastBackupTime:        time.Now().UTC(),
+	logger:                logger.GetLogger(),
+	backupToNodeRelations: make(map[uuid.UUID]BackupToNodeRelation),
+	backuperNode:          backuperNode,
 }
 
 func GetBackupsScheduler() *BackupsScheduler {
@@ -68,4 +67,8 @@ func GetBackupsScheduler() *BackupsScheduler {
 
 func GetBackuperNode() *BackuperNode {
 	return backuperNode
+}
+
+func GetBackupNodesRegistry() *BackupNodesRegistry {
+	return backupNodesRegistry
 }

@@ -37,7 +37,7 @@ func (s *HealthcheckService) IsHealthy() error {
 		}
 	}
 
-	if config.GetEnv().IsBackupNode {
+	if config.GetEnv().IsProcessingNode {
 		if !s.backuperNode.IsBackuperRunning() {
 			return errors.New("backuper node is not running for more than 5 minutes")
 		}
