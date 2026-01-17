@@ -511,6 +511,49 @@ func Test_CancelRestore_InProgressRestore_SuccessfullyCancelled(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 }
 
+func Test_RestoreBackup_WithParallelRestoreInProgress_ReturnsError(t *testing.T) {
+	router := createTestRouter()
+
+	_, cleanup := SetupMockRestoreNode(t)
+	defer cleanup()
+
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+
+	_, backup := createTestDatabaseWithBackupForRestore(workspace, owner, router)
+
+	request := restores_core.RestoreBackupRequest{
+		PostgresqlDatabase: &postgresql.PostgresqlDatabase{
+			Version:  tools.PostgresqlVersion16,
+			Host:     "localhost",
+			Port:     5432,
+			Username: "postgres",
+			Password: "postgres",
+		},
+	}
+
+	testResp := test_utils.MakePostRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/restores/%s/restore", backup.ID.String()),
+		"Bearer "+owner.Token,
+		request,
+		http.StatusOK,
+	)
+	assert.Contains(t, string(testResp.Body), "restore started successfully")
+
+	testResp2 := test_utils.MakePostRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/restores/%s/restore", backup.ID.String()),
+		"Bearer "+owner.Token,
+		request,
+		http.StatusBadRequest,
+	)
+
+	assert.Contains(t, string(testResp2.Body), "another restore is already in progress")
+}
+
 func createTestRouter() *gin.Engine {
 	return CreateTestRouter()
 }

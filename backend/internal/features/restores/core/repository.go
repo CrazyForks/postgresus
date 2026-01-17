@@ -68,6 +68,24 @@ func (r *RestoreRepository) FindByStatus(status RestoreStatus) ([]*Restore, erro
 	return restores, nil
 }
 
+func (r *RestoreRepository) FindInProgressRestoresByDatabaseID(
+	databaseID uuid.UUID,
+) ([]*Restore, error) {
+	var restores []*Restore
+
+	if err := storage.
+		GetDb().
+		Preload("Backup").
+		Joins("JOIN backups ON backups.id = restores.backup_id").
+		Where("backups.database_id = ? AND restores.status = ?", databaseID, RestoreStatusInProgress).
+		Order("restores.created_at DESC").
+		Find(&restores).Error; err != nil {
+		return nil, err
+	}
+
+	return restores, nil
+}
+
 func (r *RestoreRepository) DeleteByID(id uuid.UUID) error {
 	return storage.GetDb().Delete(&Restore{}, "id = ?", id).Error
 }

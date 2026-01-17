@@ -136,6 +136,11 @@ func (s *RestoreService) RestoreBackupWithAuth(
 		return err
 	}
 
+	// Validate no parallel restores for the same database
+	if err := s.validateNoParallelRestores(backup.DatabaseID); err != nil {
+		return err
+	}
+
 	// Create restore record with the request configuration
 	restore := restores_core.Restore{
 		ID:                 uuid.New(),
@@ -337,6 +342,22 @@ func (s *RestoreService) validateDiskSpace(
 			backupSizeGB,
 			bufferSizeGB,
 			availableGB,
+		)
+	}
+
+	return nil
+}
+
+func (s *RestoreService) validateNoParallelRestores(databaseID uuid.UUID) error {
+	inProgressRestores, err := s.restoreRepository.FindInProgressRestoresByDatabaseID(databaseID)
+	if err != nil {
+		return fmt.Errorf("failed to check for in-progress restores: %w", err)
+	}
+
+	isInProgress := len(inProgressRestores) > 0
+	if isInProgress {
+		return errors.New(
+			"another restore is already in progress for this database. Please wait for it to complete or cancel it before starting a new restore",
 		)
 	}
 
