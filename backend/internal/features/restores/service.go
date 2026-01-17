@@ -11,6 +11,7 @@ import (
 	"databasus-backend/internal/features/restores/restoring"
 	"databasus-backend/internal/features/restores/usecases"
 	"databasus-backend/internal/features/storages"
+	tasks_cancellation "databasus-backend/internal/features/tasks/cancellation"
 	users_models "databasus-backend/internal/features/users/models"
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
 	"databasus-backend/internal/util/encryption"
@@ -35,6 +36,7 @@ type RestoreService struct {
 	auditLogService      *audit_logs.AuditLogService
 	fieldEncryptor       encryption.FieldEncryptor
 	diskService          *disk.DiskService
+	taskCancelManager    *tasks_cancellation.TaskCancelManager
 }
 
 func (s *RestoreService) OnBeforeBackupRemove(backup *backups_core.Backup) error {
@@ -337,6 +339,58 @@ func (s *RestoreService) validateDiskSpace(
 			availableGB,
 		)
 	}
+
+	return nil
+}
+
+func (s *RestoreService) CancelRestore(
+	user *users_models.User,
+	restoreID uuid.UUID,
+) error {
+	restore, err := s.restoreRepository.FindByID(restoreID)
+	if err != nil {
+		return err
+	}
+
+	backup, err := s.backupService.GetBackup(restore.BackupID)
+	if err != nil {
+		return err
+	}
+
+	database, err := s.databaseService.GetDatabaseByID(backup.DatabaseID)
+	if err != nil {
+		return err
+	}
+
+	if database.WorkspaceID == nil {
+		return errors.New("cannot cancel restore for database without workspace")
+	}
+
+	canManage, err := s.workspaceService.CanUserManageDBs(*database.WorkspaceID, user)
+	if err != nil {
+		return err
+	}
+	if !canManage {
+		return errors.New("insufficient permissions to cancel restore for this database")
+	}
+
+	if restore.Status != restores_core.RestoreStatusInProgress {
+		return errors.New("restore is not in progress")
+	}
+
+	if err := s.taskCancelManager.CancelTask(restoreID); err != nil {
+		return err
+	}
+
+	s.auditLogService.WriteAuditLog(
+		fmt.Sprintf(
+			"Restore cancelled for database: %s (ID: %s)",
+			database.Name,
+			restoreID.String(),
+		),
+		&user.ID,
+		database.WorkspaceID,
+	)
 
 	return nil
 }

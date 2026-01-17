@@ -424,7 +424,8 @@ func Test_StartRestore_RestoreCompletes_DecrementsActiveTaskCount(t *testing.T) 
 	cache_utils.ClearAllCache()
 
 	// Start scheduler so it can handle task completions
-	schedulerCancel := StartSchedulerForTest(t)
+	scheduler := CreateTestRestoresScheduler()
+	schedulerCancel := StartSchedulerForTest(t, scheduler)
 	defer schedulerCancel()
 
 	restorerNode := CreateTestRestorerNode()
@@ -485,7 +486,7 @@ func Test_StartRestore_RestoreCompletes_DecrementsActiveTaskCount(t *testing.T) 
 	err = restoreRepository.Save(restore)
 	assert.NoError(t, err)
 
-	err = GetRestoresScheduler().StartRestore(restore.ID, nil)
+	err = scheduler.StartRestore(restore.ID, nil)
 	assert.NoError(t, err)
 
 	// Wait for restore to complete
@@ -524,7 +525,8 @@ func Test_StartRestore_RestoreFails_DecrementsActiveTaskCount(t *testing.T) {
 	cache_utils.ClearAllCache()
 
 	// Start scheduler so it can handle task completions
-	schedulerCancel := StartSchedulerForTest(t)
+	scheduler := CreateTestRestoresScheduler()
+	schedulerCancel := StartSchedulerForTest(t, scheduler)
 	defer schedulerCancel()
 
 	restorerNode := CreateTestRestorerNode()
@@ -585,7 +587,7 @@ func Test_StartRestore_RestoreFails_DecrementsActiveTaskCount(t *testing.T) {
 	err = restoreRepository.Save(restore)
 	assert.NoError(t, err)
 
-	err = GetRestoresScheduler().StartRestore(restore.ID, nil)
+	err = scheduler.StartRestore(restore.ID, nil)
 	assert.NoError(t, err)
 
 	// Wait for restore to fail
@@ -729,7 +731,8 @@ func Test_StartRestore_CredentialsRemovedAfterRestoreStarts(t *testing.T) {
 	cache_utils.ClearAllCache()
 
 	// Start scheduler so it can handle task assignments
-	schedulerCancel := StartSchedulerForTest(t)
+	scheduler := CreateTestRestoresScheduler()
+	schedulerCancel := StartSchedulerForTest(t, scheduler)
 	defer schedulerCancel()
 
 	// Create mock restorer node with credential capture usecase
@@ -810,7 +813,7 @@ func Test_StartRestore_CredentialsRemovedAfterRestoreStarts(t *testing.T) {
 	}
 
 	// Call StartRestore to cache credentials and trigger restore
-	err = GetRestoresScheduler().StartRestore(restore.ID, dbCache)
+	err = scheduler.StartRestore(restore.ID, dbCache)
 	assert.NoError(t, err)
 
 	// Wait for mock usecase to be called (with timeout)

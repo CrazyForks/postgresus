@@ -1,6 +1,7 @@
 package restoring
 
 import (
+	"context"
 	"errors"
 
 	backups_core "databasus-backend/internal/features/backups/backups/core"
@@ -13,6 +14,7 @@ import (
 type MockSuccessRestoreUsecase struct{}
 
 func (uc *MockSuccessRestoreUsecase) Execute(
+	ctx context.Context,
 	backupConfig *backups_config.BackupConfig,
 	restore restores_core.Restore,
 	originalDB *databases.Database,
@@ -27,6 +29,7 @@ func (uc *MockSuccessRestoreUsecase) Execute(
 type MockFailedRestoreUsecase struct{}
 
 func (uc *MockFailedRestoreUsecase) Execute(
+	ctx context.Context,
 	backupConfig *backups_config.BackupConfig,
 	restore restores_core.Restore,
 	originalDB *databases.Database,
@@ -44,6 +47,7 @@ type MockCaptureCredentialsRestoreUsecase struct {
 }
 
 func (uc *MockCaptureCredentialsRestoreUsecase) Execute(
+	ctx context.Context,
 	backupConfig *backups_config.BackupConfig,
 	restore restores_core.Restore,
 	originalDB *databases.Database,
@@ -58,4 +62,27 @@ func (uc *MockCaptureCredentialsRestoreUsecase) Execute(
 		return nil
 	}
 	return errors.New("mock restore failed")
+}
+
+type MockBlockingRestoreUsecase struct {
+	StartedChan chan bool
+}
+
+func (uc *MockBlockingRestoreUsecase) Execute(
+	ctx context.Context,
+	backupConfig *backups_config.BackupConfig,
+	restore restores_core.Restore,
+	originalDB *databases.Database,
+	restoringToDB *databases.Database,
+	backup *backups_core.Backup,
+	storage *storages.Storage,
+	isExcludeExtensions bool,
+) error {
+	if uc.StartedChan != nil {
+		uc.StartedChan <- true
+	}
+
+	<-ctx.Done()
+
+	return ctx.Err()
 }

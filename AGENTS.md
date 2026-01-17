@@ -237,6 +237,66 @@ func (c *ProjectController) extractProjectID(ctx *gin.Context) uuid.UUID {
 
 ---
 
+### Boolean Naming
+
+**Always prefix boolean variables with verbs like `is`, `has`, `was`, `should`, `can`, etc.**
+
+This makes the code more readable and clearly indicates that the variable represents a true/false state.
+
+#### Good Examples:
+
+```go
+type User struct {
+    IsActive    bool
+    IsVerified  bool
+    HasAccess   bool
+    WasNotified bool
+}
+
+type BackupConfig struct {
+    IsEnabled       bool
+    ShouldCompress  bool
+    CanRetry        bool
+}
+
+// Variables
+isInProgress := true
+wasCompleted := false
+hasPermission := checkPermissions()
+```
+
+#### Bad Examples:
+
+```go
+type User struct {
+    Active    bool  // Should be: IsActive
+    Verified  bool  // Should be: IsVerified
+    Access    bool  // Should be: HasAccess
+}
+
+type BackupConfig struct {
+    Enabled   bool  // Should be: IsEnabled
+    Compress  bool  // Should be: ShouldCompress
+    Retry     bool  // Should be: CanRetry
+}
+
+// Variables
+inProgress := true   // Should be: isInProgress
+completed := false   // Should be: wasCompleted
+permission := true   // Should be: hasPermission
+```
+
+#### Common Boolean Prefixes:
+
+- **is** - current state (IsActive, IsValid, IsEnabled)
+- **has** - possession or presence (HasAccess, HasPermission, HasError)
+- **was** - past state (WasCompleted, WasNotified, WasDeleted)
+- **should** - intention or recommendation (ShouldRetry, ShouldCompress)
+- **can** - capability or permission (CanRetry, CanDelete, CanEdit)
+- **will** - future state (WillExpire, WillRetry)
+
+---
+
 ### Comments
 
 #### Guidelines
@@ -488,6 +548,134 @@ func GetOrderRepository() *repositories.OrderRepository {
     return orderRepository
 }
 ```
+
+#### SetupDependencies() Pattern
+
+**All `SetupDependencies()` functions must use sync.Once to ensure idempotent execution.**
+
+This pattern allows `SetupDependencies()` to be safely called multiple times (especially in tests) while ensuring the actual setup logic executes only once.
+
+**Implementation Pattern:**
+
+```go
+package feature
+
+import (
+    "sync"
+    "sync/atomic"
+    "databasus-backend/internal/util/logger"
+)
+
+var (
+    setupOnce sync.Once
+    isSetup   atomic.Bool
+)
+
+func SetupDependencies() {
+    wasAlreadySetup := isSetup.Load()
+    
+    setupOnce.Do(func() {
+        // Initialize dependencies here
+        someService.SetDependency(otherService)
+        anotherService.AddListener(listener)
+        
+        isSetup.Store(true)
+    })
+    
+    if wasAlreadySetup {
+        logger.GetLogger().Warn("SetupDependencies called multiple times, ignoring subsequent call")
+    }
+}
+```
+
+**Why This Pattern:**
+
+- **Tests can call multiple times**: Test setup often calls `SetupDependencies()` multiple times without issues
+- **Thread-safe**: Works correctly with concurrent calls (nanoseconds or seconds apart)
+- **Idempotent**: Subsequent calls are safe, only log warning
+- **No panics**: Does not break tests or production code on multiple calls
+
+**Key Points:**
+
+1. Check `isSetup.Load()` **before** calling `Do()` to detect previous executions
+2. Set `isSetup.Store(true)` **inside** the `Do()` closure after setup completes
+3. Log warning if already setup (helps identify unnecessary duplicate calls)
+4. All setup logic must be inside the `Do()` closure
+
+---
+
+### Background Services
+
+**All background service `Run()` methods must panic if called multiple times to prevent corrupted states.**
+
+Background services run infinite loops and must never be started twice on the same instance. Multiple calls indicate a serious bug that would cause duplicate goroutines, resource leaks, and data corruption.
+
+**Implementation Pattern:**
+
+```go
+package feature
+
+import (
+    "context"
+    "fmt"
+    "sync"
+    "sync/atomic"
+)
+
+type BackgroundService struct {
+    // ... existing fields ...
+    runOnce sync.Once
+    hasRun  atomic.Bool
+}
+
+func (s *BackgroundService) Run(ctx context.Context) {
+    wasAlreadyRun := s.hasRun.Load()
+    
+    s.runOnce.Do(func() {
+        s.hasRun.Store(true)
+        
+        // Existing infinite loop logic
+        ticker := time.NewTicker(1 * time.Minute)
+        defer ticker.Stop()
+        
+        for {
+            select {
+            case <-ctx.Done():
+                return
+            case <-ticker.C:
+                s.doWork()
+            }
+        }
+    })
+    
+    if wasAlreadyRun {
+        panic(fmt.Sprintf("%T.Run() called multiple times", s))
+    }
+}
+```
+
+**Why Panic Instead of Warning:**
+
+- **Prevents corruption**: Multiple `Run()` calls would create duplicate goroutines consuming resources
+- **Fails fast**: Catches critical bugs immediately in tests and production
+- **Clear indication**: Panic clearly indicates a serious programming error
+- **Applies everywhere**: Same protection in tests and production
+
+**When This Applies:**
+
+- All background services with infinite loops
+- Registry services (BackupNodesRegistry, RestoreNodesRegistry)
+- Scheduler services (BackupsScheduler, RestoresScheduler)
+- Worker nodes (BackuperNode, RestorerNode)
+- Cleanup services (AuditLogBackgroundService, DownloadTokenBackgroundService)
+
+**Key Points:**
+
+1. Check `hasRun.Load()` **before** calling `Do()` to detect previous executions
+2. Set `hasRun.Store(true)` **inside** the `Do()` closure before starting work
+3. **Always panic** if already run (never just log warning)
+4. All run logic must be inside the `Do()` closure
+5. This pattern is **thread-safe** for any timing (concurrent or sequential calls)
 
 ---
 

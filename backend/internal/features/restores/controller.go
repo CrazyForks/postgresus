@@ -16,6 +16,7 @@ type RestoreController struct {
 func (c *RestoreController) RegisterRoutes(router *gin.RouterGroup) {
 	router.GET("/restores/:backupId", c.GetRestores)
 	router.POST("/restores/:backupId/restore", c.RestoreBackup)
+	router.POST("/restores/cancel/:restoreId", c.CancelRestore)
 }
 
 // GetRestores
@@ -84,4 +85,34 @@ func (c *RestoreController) RestoreBackup(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "restore started successfully"})
+}
+
+// CancelRestore
+// @Summary Cancel an in-progress restore
+// @Description Cancel a restore that is currently in progress
+// @Tags restores
+// @Param restoreId path string true "Restore ID"
+// @Success 204
+// @Failure 400
+// @Failure 401
+// @Router /restores/cancel/{restoreId} [post]
+func (c *RestoreController) CancelRestore(ctx *gin.Context) {
+	user, ok := users_middleware.GetUserFromContext(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	restoreID, err := uuid.Parse(ctx.Param("restoreId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid restore ID"})
+		return
+	}
+
+	if err := c.restoreService.CancelRestore(user, restoreID); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.Status(http.StatusNoContent)
 }

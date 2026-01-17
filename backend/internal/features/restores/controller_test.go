@@ -18,20 +18,25 @@ import (
 
 	"databasus-backend/internal/config"
 	audit_logs "databasus-backend/internal/features/audit_logs"
+	"databasus-backend/internal/features/backups/backups"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/databases/databases/mysql"
 	"databasus-backend/internal/features/databases/databases/postgresql"
+	"databasus-backend/internal/features/notifiers"
 	restores_core "databasus-backend/internal/features/restores/core"
+	"databasus-backend/internal/features/restores/restoring"
 	"databasus-backend/internal/features/storages"
 	local_storage "databasus-backend/internal/features/storages/models/local"
+	tasks_cancellation "databasus-backend/internal/features/tasks/cancellation"
 	users_dto "databasus-backend/internal/features/users/dto"
 	users_enums "databasus-backend/internal/features/users/enums"
 	users_services "databasus-backend/internal/features/users/services"
 	users_testing "databasus-backend/internal/features/users/testing"
 	workspaces_models "databasus-backend/internal/features/workspaces/models"
 	workspaces_testing "databasus-backend/internal/features/workspaces/testing"
+	cache_utils "databasus-backend/internal/util/cache"
 	util_encryption "databasus-backend/internal/util/encryption"
 	test_utils "databasus-backend/internal/util/testing"
 	"databasus-backend/internal/util/tools"
@@ -368,6 +373,142 @@ func Test_RestoreBackup_DiskSpaceValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_CancelRestore_InProgressRestore_SuccessfullyCancelled(t *testing.T) {
+	cache_utils.ClearAllCache()
+	tasks_cancellation.SetupDependencies()
+
+	user := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+	router := createTestRouter()
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", user, router)
+	storage := storages.CreateTestStorage(workspace.ID)
+	notifier := notifiers.CreateTestNotifier(workspace.ID)
+	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
+
+	defer func() {
+		backupRepo := backups_core.BackupRepository{}
+		backups, _ := backupRepo.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepo.DeleteByID(backup.ID)
+		}
+
+		restoreRepo := restores_core.RestoreRepository{}
+		restores, _ := restoreRepo.FindByStatus(restores_core.RestoreStatusInProgress)
+		for _, restore := range restores {
+			restoreRepo.DeleteByID(restore.ID)
+		}
+		restores, _ = restoreRepo.FindByStatus(restores_core.RestoreStatusCanceled)
+		for _, restore := range restores {
+			restoreRepo.DeleteByID(restore.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		storages.RemoveTestStorage(storage.ID)
+		notifiers.RemoveTestNotifier(notifier)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+
+		cache_utils.ClearAllCache()
+	}()
+
+	backups_config.EnableBackupsForTestDatabase(database.ID, storage)
+	backup := backups.CreateTestBackup(database.ID, storage.ID)
+
+	mockUsecase := &restoring.MockBlockingRestoreUsecase{
+		StartedChan: make(chan bool, 1),
+	}
+	restorerNode := restoring.CreateTestRestorerNodeWithUsecase(mockUsecase)
+
+	cancelNode := restoring.StartRestorerNodeForTest(t, restorerNode)
+	defer cancelNode()
+
+	time.Sleep(200 * time.Millisecond)
+
+	restoreRequest := restores_core.RestoreBackupRequest{
+		PostgresqlDatabase: &postgresql.PostgresqlDatabase{
+			Version:  tools.PostgresqlVersion16,
+			Host:     "localhost",
+			Port:     5432,
+			Username: "postgres",
+			Password: "postgres",
+		},
+	}
+
+	var restoreResponse map[string]interface{}
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/restores/%s/restore", backup.ID.String()),
+		"Bearer "+user.Token,
+		restoreRequest,
+		http.StatusOK,
+		&restoreResponse,
+	)
+
+	select {
+	case <-mockUsecase.StartedChan:
+		t.Log("Restore started and is blocking")
+	case <-time.After(2 * time.Second):
+		t.Fatal("Restore did not start within timeout")
+	}
+
+	restoreRepo := &restores_core.RestoreRepository{}
+	restores, err := restoreRepo.FindByBackupID(backup.ID)
+	assert.NoError(t, err)
+	assert.Greater(t, len(restores), 0, "At least one restore should exist")
+
+	var restoreID uuid.UUID
+	for _, r := range restores {
+		if r.Status == restores_core.RestoreStatusInProgress {
+			restoreID = r.ID
+			break
+		}
+	}
+	assert.NotEqual(t, uuid.Nil, restoreID, "Should find an in-progress restore")
+
+	resp := test_utils.MakePostRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/restores/cancel/%s", restoreID.String()),
+		"Bearer "+user.Token,
+		nil,
+		http.StatusNoContent,
+	)
+
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+
+	deadline := time.Now().UTC().Add(3 * time.Second)
+	var restore *restores_core.Restore
+	for time.Now().UTC().Before(deadline) {
+		restore, err = restoreRepo.FindByID(restoreID)
+		assert.NoError(t, err)
+		if restore.Status == restores_core.RestoreStatusCanceled {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	assert.Equal(t, restores_core.RestoreStatusCanceled, restore.Status)
+
+	auditLogService := audit_logs.GetAuditLogService()
+	auditLogs, err := auditLogService.GetWorkspaceAuditLogs(
+		workspace.ID,
+		&audit_logs.GetAuditLogsRequest{Limit: 100, Offset: 0},
+	)
+	assert.NoError(t, err)
+
+	foundCancelLog := false
+	for _, log := range auditLogs.AuditLogs {
+		if strings.Contains(log.Message, "Restore cancelled") &&
+			strings.Contains(log.Message, database.Name) {
+			foundCancelLog = true
+			break
+		}
+	}
+	assert.True(t, foundCancelLog, "Cancel audit log should be created")
+
+	time.Sleep(200 * time.Millisecond)
 }
 
 func createTestRouter() *gin.Engine {

@@ -1,6 +1,12 @@
 package backuping
 
 import (
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/google/uuid"
+
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	"databasus-backend/internal/features/backups/backups/usecases"
 	backups_config "databasus-backend/internal/features/backups/config"
@@ -12,9 +18,6 @@ import (
 	cache_utils "databasus-backend/internal/util/cache"
 	"databasus-backend/internal/util/encryption"
 	"databasus-backend/internal/util/logger"
-	"time"
-
-	"github.com/google/uuid"
 )
 
 var backupRepository = &backups_core.BackupRepository{}
@@ -22,11 +25,13 @@ var backupRepository = &backups_core.BackupRepository{}
 var taskCancelManager = tasks_cancellation.GetTaskCancelManager()
 
 var backupNodesRegistry = &BackupNodesRegistry{
-	cache_utils.GetValkeyClient(),
-	logger.GetLogger(),
-	cache_utils.DefaultCacheTimeout,
-	cache_utils.NewPubSubManager(),
-	cache_utils.NewPubSubManager(),
+	client:            cache_utils.GetValkeyClient(),
+	logger:            logger.GetLogger(),
+	timeout:           cache_utils.DefaultCacheTimeout,
+	pubsubBackups:     cache_utils.NewPubSubManager(),
+	pubsubCompletions: cache_utils.NewPubSubManager(),
+	runOnce:           sync.Once{},
+	hasRun:            atomic.Bool{},
 }
 
 func getNodeID() uuid.UUID {
@@ -34,19 +39,21 @@ func getNodeID() uuid.UUID {
 }
 
 var backuperNode = &BackuperNode{
-	databases.GetDatabaseService(),
-	encryption.GetFieldEncryptor(),
-	workspaces_services.GetWorkspaceService(),
-	backupRepository,
-	backups_config.GetBackupConfigService(),
-	storages.GetStorageService(),
-	notifiers.GetNotifierService(),
-	taskCancelManager,
-	backupNodesRegistry,
-	logger.GetLogger(),
-	usecases.GetCreateBackupUsecase(),
-	getNodeID(),
-	time.Time{},
+	databaseService:     databases.GetDatabaseService(),
+	fieldEncryptor:      encryption.GetFieldEncryptor(),
+	workspaceService:    workspaces_services.GetWorkspaceService(),
+	backupRepository:    backupRepository,
+	backupConfigService: backups_config.GetBackupConfigService(),
+	storageService:      storages.GetStorageService(),
+	notificationSender:  notifiers.GetNotifierService(),
+	backupCancelManager: taskCancelManager,
+	backupNodesRegistry: backupNodesRegistry,
+	logger:              logger.GetLogger(),
+	createBackupUseCase: usecases.GetCreateBackupUsecase(),
+	nodeID:              getNodeID(),
+	lastHeartbeat:       time.Time{},
+	runOnce:             sync.Once{},
+	hasRun:              atomic.Bool{},
 }
 
 var backupsScheduler = &BackupsScheduler{
@@ -59,6 +66,8 @@ var backupsScheduler = &BackupsScheduler{
 	logger:                logger.GetLogger(),
 	backupToNodeRelations: make(map[uuid.UUID]BackupToNodeRelation),
 	backuperNode:          backuperNode,
+	runOnce:               sync.Once{},
+	hasRun:                atomic.Bool{},
 }
 
 func GetBackupsScheduler() *BackupsScheduler {

@@ -1,6 +1,9 @@
 package databases
 
 import (
+	"sync"
+	"sync/atomic"
+
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/notifiers"
 	users_services "databasus-backend/internal/features/users/services"
@@ -37,7 +40,22 @@ func GetDatabaseController() *DatabaseController {
 	return databaseController
 }
 
+var (
+	setupOnce sync.Once
+	isSetup   atomic.Bool
+)
+
 func SetupDependencies() {
-	workspaces_services.GetWorkspaceService().AddWorkspaceDeletionListener(databaseService)
-	notifiers.GetNotifierService().SetNotifierDatabaseCounter(databaseService)
+	wasAlreadySetup := isSetup.Load()
+
+	setupOnce.Do(func() {
+		workspaces_services.GetWorkspaceService().AddWorkspaceDeletionListener(databaseService)
+		notifiers.GetNotifierService().SetNotifierDatabaseCounter(databaseService)
+
+		isSetup.Store(true)
+	})
+
+	if wasAlreadySetup {
+		logger.GetLogger().Warn("SetupDependencies called multiple times, ignoring subsequent call")
+	}
 }

@@ -1,10 +1,14 @@
 package backups_config
 
 import (
+	"sync"
+	"sync/atomic"
+
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/notifiers"
 	"databasus-backend/internal/features/storages"
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
+	"databasus-backend/internal/util/logger"
 )
 
 var backupConfigRepository = &BackupConfigRepository{}
@@ -28,6 +32,21 @@ func GetBackupConfigService() *BackupConfigService {
 	return backupConfigService
 }
 
+var (
+	setupOnce sync.Once
+	isSetup   atomic.Bool
+)
+
 func SetupDependencies() {
-	storages.GetStorageService().SetStorageDatabaseCounter(backupConfigService)
+	wasAlreadySetup := isSetup.Load()
+
+	setupOnce.Do(func() {
+		storages.GetStorageService().SetStorageDatabaseCounter(backupConfigService)
+
+		isSetup.Store(true)
+	})
+
+	if wasAlreadySetup {
+		logger.GetLogger().Warn("SetupDependencies called multiple times, ignoring subsequent call")
+	}
 }

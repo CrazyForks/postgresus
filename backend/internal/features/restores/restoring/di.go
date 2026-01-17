@@ -1,6 +1,8 @@
 package restoring
 
 import (
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,6 +13,7 @@ import (
 	restores_core "databasus-backend/internal/features/restores/core"
 	"databasus-backend/internal/features/restores/usecases"
 	"databasus-backend/internal/features/storages"
+	tasks_cancellation "databasus-backend/internal/features/tasks/cancellation"
 	cache_utils "databasus-backend/internal/util/cache"
 	"databasus-backend/internal/util/encryption"
 	"databasus-backend/internal/util/logger"
@@ -19,11 +22,13 @@ import (
 var restoreRepository = &restores_core.RestoreRepository{}
 
 var restoreNodesRegistry = &RestoreNodesRegistry{
-	cache_utils.GetValkeyClient(),
-	logger.GetLogger(),
-	cache_utils.DefaultCacheTimeout,
-	cache_utils.NewPubSubManager(),
-	cache_utils.NewPubSubManager(),
+	client:            cache_utils.GetValkeyClient(),
+	logger:            logger.GetLogger(),
+	timeout:           cache_utils.DefaultCacheTimeout,
+	pubsubRestores:    cache_utils.NewPubSubManager(),
+	pubsubCompletions: cache_utils.NewPubSubManager(),
+	runOnce:           sync.Once{},
+	hasRun:            atomic.Bool{},
 }
 
 var restoreDatabaseCache = cache_utils.NewCacheUtil[RestoreDatabaseCache](
@@ -31,19 +36,24 @@ var restoreDatabaseCache = cache_utils.NewCacheUtil[RestoreDatabaseCache](
 	"restore_db:",
 )
 
+var restoreCancelManager = tasks_cancellation.GetTaskCancelManager()
+
 var restorerNode = &RestorerNode{
-	uuid.New(),
-	databases.GetDatabaseService(),
-	backups.GetBackupService(),
-	encryption.GetFieldEncryptor(),
-	restoreRepository,
-	backups_config.GetBackupConfigService(),
-	storages.GetStorageService(),
-	restoreNodesRegistry,
-	logger.GetLogger(),
-	usecases.GetRestoreBackupUsecase(),
-	restoreDatabaseCache,
-	time.Time{},
+	nodeID:               uuid.New(),
+	databaseService:      databases.GetDatabaseService(),
+	backupService:        backups.GetBackupService(),
+	fieldEncryptor:       encryption.GetFieldEncryptor(),
+	restoreRepository:    restoreRepository,
+	backupConfigService:  backups_config.GetBackupConfigService(),
+	storageService:       storages.GetStorageService(),
+	restoreNodesRegistry: restoreNodesRegistry,
+	logger:               logger.GetLogger(),
+	restoreBackupUsecase: usecases.GetRestoreBackupUsecase(),
+	cacheUtil:            restoreDatabaseCache,
+	restoreCancelManager: restoreCancelManager,
+	lastHeartbeat:        time.Time{},
+	runOnce:              sync.Once{},
+	hasRun:               atomic.Bool{},
 }
 
 var restoresScheduler = &RestoresScheduler{
@@ -58,6 +68,8 @@ var restoresScheduler = &RestoresScheduler{
 	restorerNode:             restorerNode,
 	cacheUtil:                restoreDatabaseCache,
 	completionSubscriptionID: uuid.Nil,
+	runOnce:                  sync.Once{},
+	hasRun:                   atomic.Bool{},
 }
 
 func GetRestoresScheduler() *RestoresScheduler {

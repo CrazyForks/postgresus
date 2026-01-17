@@ -36,6 +36,7 @@ type RestoreMysqlBackupUsecase struct {
 }
 
 func (uc *RestoreMysqlBackupUsecase) Execute(
+	parentCtx context.Context,
 	originalDB *databases.Database,
 	restoringToDB *databases.Database,
 	backupConfig *backups_config.BackupConfig,
@@ -78,6 +79,7 @@ func (uc *RestoreMysqlBackupUsecase) Execute(
 	}
 
 	return uc.restoreFromStorage(
+		parentCtx,
 		originalDB,
 		tools.GetMysqlExecutable(
 			my.Version,
@@ -94,6 +96,7 @@ func (uc *RestoreMysqlBackupUsecase) Execute(
 }
 
 func (uc *RestoreMysqlBackupUsecase) restoreFromStorage(
+	parentCtx context.Context,
 	database *databases.Database,
 	mysqlBin string,
 	args []string,
@@ -102,7 +105,7 @@ func (uc *RestoreMysqlBackupUsecase) restoreFromStorage(
 	storage *storages.Storage,
 	myConfig *mysqltypes.MysqlDatabase,
 ) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
+	ctx, cancel := context.WithTimeout(parentCtx, 60*time.Minute)
 	defer cancel()
 
 	go func() {
@@ -111,6 +114,9 @@ func (uc *RestoreMysqlBackupUsecase) restoreFromStorage(
 		for {
 			select {
 			case <-ctx.Done():
+				return
+			case <-parentCtx.Done():
+				cancel()
 				return
 			case <-ticker.C:
 				if config.IsShouldShutdown() {
@@ -203,6 +209,15 @@ func (uc *RestoreMysqlBackupUsecase) executeMysqlRestore(
 
 	waitErr := cmd.Wait()
 	stderrOutput := <-stderrCh
+
+	// Check for cancellation
+	select {
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return fmt.Errorf("restore cancelled")
+		}
+	default:
+	}
 
 	if config.IsShouldShutdown() {
 		return fmt.Errorf("restore cancelled due to shutdown")

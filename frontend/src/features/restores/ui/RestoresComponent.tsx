@@ -1,5 +1,10 @@
-import { CopyOutlined, ExclamationCircleOutlined, SyncOutlined } from '@ant-design/icons';
-import { CheckCircleOutlined } from '@ant-design/icons';
+import {
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  CopyOutlined,
+  ExclamationCircleOutlined,
+  SyncOutlined,
+} from '@ant-design/icons';
 import { App, Button, Modal, Spin, Tooltip } from 'antd';
 import dayjs from 'dayjs';
 import { useEffect, useRef, useState } from 'react';
@@ -8,6 +13,7 @@ import type { Backup } from '../../../entity/backups';
 import { type Database, DatabaseType } from '../../../entity/databases';
 import { type Restore, RestoreStatus, restoreApi } from '../../../entity/restores';
 import { getUserTimeFormat } from '../../../shared/time';
+import { ConfirmationComponent } from '../../../shared/ui';
 import { EditDatabaseSpecificDataComponent } from '../../databases/ui/edit/EditDatabaseSpecificDataComponent';
 
 interface Props {
@@ -70,6 +76,10 @@ export const RestoresComponent = ({ database, backup }: Props) => {
 
   const [isShowRestore, setIsShowRestore] = useState(false);
 
+  const [cancellingRestoreId, setCancellingRestoreId] = useState<string | undefined>();
+  const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
+  const [restoreToCancelId, setRestoreToCancelId] = useState<string | undefined>();
+
   const isReloadInProgress = useRef(false);
 
   const loadRestores = async () => {
@@ -100,6 +110,18 @@ export const RestoresComponent = ({ database, backup }: Props) => {
       setIsShowRestore(false);
     } catch (e) {
       alert((e as Error).message);
+    }
+  };
+
+  const cancelRestore = async (restoreId: string) => {
+    setCancellingRestoreId(restoreId);
+    try {
+      await restoreApi.cancelRestore(restoreId);
+      await loadRestores();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setCancellingRestoreId(undefined);
     }
   };
 
@@ -190,40 +212,77 @@ export const RestoresComponent = ({ database, backup }: Props) => {
 
               return (
                 <div key={restore.id} className="mb-1 rounded border border-gray-200 p-3 text-sm">
-                  <div className="mb-1 flex">
-                    <div className="w-[75px] min-w-[75px]">Status</div>
+                  <div className="mb-1 flex items-center justify-between">
+                    <div className="flex flex-1">
+                      <div className="w-[75px] min-w-[75px]">Status</div>
 
-                    {restore.status === RestoreStatus.FAILED && (
-                      <Tooltip title="Click to see error details">
-                        <div
-                          className="flex cursor-pointer items-center text-red-600 underline"
-                          onClick={() => setShowingRestoreError(restore)}
-                        >
-                          <ExclamationCircleOutlined
+                      {restore.status === RestoreStatus.FAILED && (
+                        <Tooltip title="Click to see error details">
+                          <div
+                            className="flex cursor-pointer items-center text-red-600 underline"
+                            onClick={() => setShowingRestoreError(restore)}
+                          >
+                            <ExclamationCircleOutlined
+                              className="mr-2"
+                              style={{ fontSize: 16, color: '#ff0000' }}
+                            />
+
+                            <div>Failed</div>
+                          </div>
+                        </Tooltip>
+                      )}
+
+                      {restore.status === RestoreStatus.COMPLETED && (
+                        <div className="flex items-center">
+                          <CheckCircleOutlined
                             className="mr-2"
-                            style={{ fontSize: 16, color: '#ff0000' }}
+                            style={{ fontSize: 16, color: '#008000' }}
                           />
 
-                          <div>Failed</div>
+                          <div>Successful</div>
                         </div>
-                      </Tooltip>
-                    )}
+                      )}
 
-                    {restore.status === RestoreStatus.COMPLETED && (
-                      <div className="flex items-center">
-                        <CheckCircleOutlined
-                          className="mr-2"
-                          style={{ fontSize: 16, color: '#008000' }}
-                        />
+                      {restore.status === RestoreStatus.CANCELED && (
+                        <div className="flex items-center text-gray-500">
+                          <CloseCircleOutlined
+                            className="mr-2"
+                            style={{ fontSize: 16, color: '#808080' }}
+                          />
 
-                        <div>Successful</div>
-                      </div>
-                    )}
+                          <div>Canceled</div>
+                        </div>
+                      )}
+
+                      {restore.status === RestoreStatus.IN_PROGRESS && (
+                        <div className="flex items-center font-bold text-blue-600">
+                          <SyncOutlined spin />
+                          <span className="ml-2">In progress</span>
+                        </div>
+                      )}
+                    </div>
 
                     {restore.status === RestoreStatus.IN_PROGRESS && (
-                      <div className="flex items-center font-bold text-blue-600">
-                        <SyncOutlined spin />
-                        <span className="ml-2">In progress</span>
+                      <div className="ml-2">
+                        {cancellingRestoreId === restore.id ? (
+                          <SyncOutlined spin style={{ fontSize: 16 }} />
+                        ) : (
+                          <Tooltip title="Cancel restore">
+                            <CloseCircleOutlined
+                              className="cursor-pointer"
+                              onClick={() => {
+                                if (cancellingRestoreId) return;
+                                setRestoreToCancelId(restore.id);
+                                setShowCancelConfirmation(true);
+                              }}
+                              style={{
+                                color: '#ff0000',
+                                fontSize: 16,
+                                opacity: cancellingRestoreId ? 0.2 : 1,
+                              }}
+                            />
+                          </Tooltip>
+                        )}
                       </div>
                     )}
                   </div>
@@ -288,6 +347,25 @@ export const RestoresComponent = ({ database, backup }: Props) => {
             {showingRestoreError.failMessage}
           </div>
         </Modal>
+      )}
+
+      {showCancelConfirmation && (
+        <ConfirmationComponent
+          onConfirm={() => {
+            setShowCancelConfirmation(false);
+            if (restoreToCancelId) {
+              cancelRestore(restoreToCancelId);
+            }
+            setRestoreToCancelId(undefined);
+          }}
+          onDecline={() => {
+            setShowCancelConfirmation(false);
+            setRestoreToCancelId(undefined);
+          }}
+          description="<strong>⚠️ Warning:</strong> Cancelling this restore will likely leave your database in a corrupted or incomplete state. You will need to recreate the database before attempting another restore.<br/><br/>Are you sure you want to cancel?"
+          actionText="Yes, cancel restore"
+          actionButtonColor="red"
+        />
       )}
     </div>
   );
