@@ -531,6 +531,11 @@ jobs:
     needs: [test-backend, test-frontend]
     if: ${{ github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[skip-release]') }}
     steps:
+      - name: Clean workspace
+        run: |
+          sudo rm -rf "$GITHUB_WORKSPACE"/* || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/.* || true
+
       - name: Check out code
         uses: actions/checkout@v4
 
@@ -565,6 +570,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Clean workspace
+        run: |
+          sudo rm -rf "$GITHUB_WORKSPACE"/* || true
+          sudo rm -rf "$GITHUB_WORKSPACE"/.* || true
+
       - name: Check out code
         uses: actions/checkout@v4
 
@@ -603,6 +613,11 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      - name: Clean workspace
+        run: |
+          rm -rf "$GITHUB_WORKSPACE"/* || true
+          rm -rf "$GITHUB_WORKSPACE"/.* || true
+
       - name: Check out code
         uses: actions/checkout@v4
         with:
@@ -719,6 +734,11 @@ jobs:
       contents: read
       packages: write
     steps:
+      - name: Clean workspace
+        run: |
+          rm -rf "$GITHUB_WORKSPACE"/* || true
+          rm -rf "$GITHUB_WORKSPACE"/.* || true
+
       - name: Install dependencies
         run: |
           apk add --no-cache git bash curl
