@@ -124,6 +124,10 @@ func Test_BackupAndRestorePostgresqlWithEncryption_RestoreIsSuccessful(t *testin
 }
 
 func Test_BackupAndRestoreSupabase_PublicSchemaOnly_RestoreIsSuccessful(t *testing.T) {
+	if config.GetEnv().IsSkipExternalResourcesTests {
+		t.Skip("Skipping Supabase test: IS_SKIP_EXTERNAL_RESOURCES_TESTS is true")
+	}
+
 	env := config.GetEnv()
 
 	if env.TestSupabaseHost == "" {

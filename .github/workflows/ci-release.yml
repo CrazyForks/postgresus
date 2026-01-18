@@ -150,6 +150,7 @@ jobs:
           GOOSE_MIGRATION_DIR=./migrations
           # testing 
           TEST_LOCALHOST=172.17.0.1
+          IS_SKIP_EXTERNAL_RESOURCES_TESTS=true
           # to get Google Drive env variables: add storage in UI and copy data from added storage here 
           TEST_GOOGLE_DRIVE_CLIENT_ID=${{ secrets.TEST_GOOGLE_DRIVE_CLIENT_ID }}
           TEST_GOOGLE_DRIVE_CLIENT_SECRET=${{ secrets.TEST_GOOGLE_DRIVE_CLIENT_SECRET }}
