@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )
 
@@ -394,10 +395,13 @@ func (p *PostgresqlDatabase) IsUserReadOnly(
 //
 // This method performs the following operations atomically in a single transaction:
 // 1. Creates a PostgreSQL user with a UUID-based password
-// 2. Grants CONNECT privilege on the database
-// 3. Grants USAGE on all non-system schemas
-// 4. Grants SELECT on all existing tables and sequences
-// 5. Sets default privileges for future tables and sequences
+// 2. Revokes CREATE privilege on public schema from PUBLIC role
+// 3. Grants CONNECT privilege on the database
+// 4. Discovers all user-created schemas
+// 5. Grants USAGE on all non-system schemas
+// 6. Grants SELECT on all existing tables and sequences
+// 7. Sets default privileges for future tables and sequences
+// 8. Verifies user creation before committing
 //
 // Security features:
 // - Username format: "databasus-{8-char-uuid}" for uniqueness
@@ -487,33 +491,56 @@ func (p *PostgresqlDatabase) CreateReadOnlyUser(
 			return "", "", fmt.Errorf("failed to create user: %w", err)
 		}
 
-		// Step 1.5: Revoke CREATE privilege from PUBLIC role on public schema
+		// Step 2: Check if public schema exists and revoke CREATE privilege if it does
 		// This is necessary because all PostgreSQL users inherit CREATE privilege on the
 		// public schema through the PUBLIC role. This is a one-time operation that affects
 		// the entire database, making it more secure by default.
 		// Note: This only affects the public schema; other schemas are unaffected.
-		_, err = tx.Exec(ctx, `REVOKE CREATE ON SCHEMA public FROM PUBLIC`)
-		if err != nil {
-			logger.Error("Failed to revoke CREATE on public from PUBLIC", "error", err)
-			if !strings.Contains(err.Error(), "schema \"public\" does not exist") &&
-				!strings.Contains(err.Error(), "permission denied") {
-				return "", "", fmt.Errorf("failed to revoke CREATE from PUBLIC: %w", err)
-			}
-		}
-
-		// Now revoke from the specific user as well (belt and suspenders)
-		_, err = tx.Exec(ctx, fmt.Sprintf(`REVOKE CREATE ON SCHEMA public FROM "%s"`, baseUsername))
-		if err != nil {
-			logger.Error(
-				"Failed to revoke CREATE on public schema from user",
-				"error",
-				err,
-				"username",
-				baseUsername,
+		var publicSchemaExists bool
+		err = tx.QueryRow(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM information_schema.schemata 
+				WHERE schema_name = 'public'
 			)
+		`).Scan(&publicSchemaExists)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to check if public schema exists: %w", err)
 		}
 
-		// Step 2: Grant database connection privilege and revoke TEMP
+		if publicSchemaExists {
+			// Revoke CREATE from PUBLIC role (affects all users)
+			_, err = tx.Exec(ctx, `REVOKE CREATE ON SCHEMA public FROM PUBLIC`)
+			if err != nil {
+				if strings.Contains(err.Error(), "permission denied") {
+					logger.Warn(
+						"Failed to revoke CREATE on public from PUBLIC (permission denied)",
+						"error",
+						err,
+					)
+				} else {
+					return "", "", fmt.Errorf("failed to revoke CREATE from PUBLIC on existing public schema: %w", err)
+				}
+			}
+
+			// Now revoke from the specific user as well (belt and suspenders)
+			_, err = tx.Exec(
+				ctx,
+				fmt.Sprintf(`REVOKE CREATE ON SCHEMA public FROM "%s"`, baseUsername),
+			)
+			if err != nil {
+				logger.Warn(
+					"Failed to revoke CREATE on public schema from user",
+					"error",
+					err,
+					"username",
+					baseUsername,
+				)
+			}
+		} else {
+			logger.Info("Public schema does not exist, skipping CREATE privilege revocation")
+		}
+
+		// Step 3: Grant database connection privilege and revoke TEMP
 		_, err = tx.Exec(
 			ctx,
 			fmt.Sprintf(`GRANT CONNECT ON DATABASE "%s" TO "%s"`, *p.Database, baseUsername),
@@ -537,7 +564,7 @@ func (p *PostgresqlDatabase) CreateReadOnlyUser(
 			logger.Warn("Failed to revoke TEMP privilege", "error", err, "username", baseUsername)
 		}
 
-		// Step 3: Discover all user-created schemas
+		// Step 4: Discover all user-created schemas
 		rows, err := tx.Query(ctx, `
 			SELECT schema_name
 			FROM information_schema.schemata
@@ -562,7 +589,7 @@ func (p *PostgresqlDatabase) CreateReadOnlyUser(
 			return "", "", fmt.Errorf("error iterating schemas: %w", err)
 		}
 
-		// Step 4: Grant USAGE on each schema and explicitly prevent CREATE
+		// Step 5: Grant USAGE on each schema and explicitly prevent CREATE
 		for _, schema := range schemas {
 			// Revoke CREATE specifically (handles inheritance from PUBLIC role)
 			_, err = tx.Exec(
@@ -591,7 +618,7 @@ func (p *PostgresqlDatabase) CreateReadOnlyUser(
 			}
 		}
 
-		// Step 5: Grant SELECT on ALL existing tables and sequences
+		// Step 6: Grant SELECT on ALL existing tables and sequences
 		grantSelectSQL := fmt.Sprintf(`
 			DO $$
 			DECLARE
@@ -613,7 +640,7 @@ func (p *PostgresqlDatabase) CreateReadOnlyUser(
 			return "", "", fmt.Errorf("failed to grant select on tables: %w", err)
 		}
 
-		// Step 6: Set default privileges for FUTURE tables and sequences
+		// Step 7: Set default privileges for FUTURE tables and sequences
 		defaultPrivilegesSQL := fmt.Sprintf(`
 			DO $$
 			DECLARE
@@ -635,7 +662,7 @@ func (p *PostgresqlDatabase) CreateReadOnlyUser(
 			return "", "", fmt.Errorf("failed to set default privileges: %w", err)
 		}
 
-		// Step 7: Verify user creation before committing
+		// Step 8: Verify user creation before committing
 		var verifyUsername string
 		err = tx.QueryRow(ctx, fmt.Sprintf(`SELECT rolname FROM pg_roles WHERE rolname = '%s'`, baseUsername)).
 			Scan(&verifyUsername)
@@ -851,7 +878,15 @@ func checkBackupPermissions(
 		}
 
 		if err != nil {
-			return fmt.Errorf("cannot check SELECT privileges: %w", err)
+			// If the user doesn't have USAGE on the schema, has_table_privilege will fail
+			// with "permission denied for schema". This means they definitely don't have
+			// SELECT privileges, so treat this as missing permissions rather than an error.
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "42501" { // insufficient_privilege
+				selectableTableCount = 0
+			} else {
+				return fmt.Errorf("cannot check SELECT privileges: %w", err)
+			}
 		}
 		if selectableTableCount == 0 {
 			missingPrivileges = append(missingPrivileges, "SELECT on tables")
