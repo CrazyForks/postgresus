@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"mime"
 	"net"
 	"net/smtp"
 	"time"
@@ -115,16 +116,34 @@ func (e *EmailNotifier) EncryptSensitiveData(encryptor encryption.FieldEncryptor
 	return nil
 }
 
+// encodeRFC2047 encodes a string using RFC 2047 MIME encoding for email headers
+// This ensures compatibility with SMTP servers that don't support SMTPUTF8
+func encodeRFC2047(s string) string {
+	// mime.QEncoding handles UTF-8 → =?UTF-8?Q?...?= encoding
+	// This allows non-ASCII characters (emojis, accents, etc.) in email headers
+	// while maintaining compatibility with all SMTP servers
+	return mime.QEncoding.Encode("UTF-8", s)
+}
+
 func (e *EmailNotifier) buildEmailContent(heading, message, from string) []byte {
-	subject := fmt.Sprintf("Subject: %s\r\n", heading)
-	mime := fmt.Sprintf(
+	// Encode Subject header using RFC 2047 to avoid SMTPUTF8 requirement
+	// This ensures compatibility with SMTP servers that don't support SMTPUTF8
+	encodedSubject := encodeRFC2047(heading)
+	subject := fmt.Sprintf("Subject: %s\r\n", encodedSubject)
+
+	mimeHeaders := fmt.Sprintf(
 		"MIME-version: 1.0;\nContent-Type: %s; charset=\"%s\";\n\n",
 		MIMETypeHTML,
 		MIMECharsetUTF8,
 	)
-	fromHeader := fmt.Sprintf("From: %s\r\n", from)
+
+	// Encode From header display name if it contains non-ASCII
+	encodedFrom := encodeRFC2047(from)
+	fromHeader := fmt.Sprintf("From: %s\r\n", encodedFrom)
+
 	toHeader := fmt.Sprintf("To: %s\r\n", e.TargetEmail)
-	return []byte(fromHeader + toHeader + subject + mime + message)
+
+	return []byte(fromHeader + toHeader + subject + mimeHeaders + message)
 }
 
 func (e *EmailNotifier) sendImplicitTLS(
