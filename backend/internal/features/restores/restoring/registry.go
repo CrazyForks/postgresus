@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	cache_utils "databasus-backend/internal/util/cache"
@@ -47,24 +49,37 @@ type RestoreNodesRegistry struct {
 	timeout           time.Duration
 	pubsubRestores    *cache_utils.PubSubManager
 	pubsubCompletions *cache_utils.PubSubManager
+
+	runOnce sync.Once
+	hasRun  atomic.Bool
 }
 
 func (r *RestoreNodesRegistry) Run(ctx context.Context) {
-	if err := r.cleanupDeadNodes(); err != nil {
-		r.logger.Error("Failed to cleanup dead nodes on startup", "error", err)
-	}
+	wasAlreadyRun := r.hasRun.Load()
 
-	ticker := time.NewTicker(cleanupTickerInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := r.cleanupDeadNodes(); err != nil {
-				r.logger.Error("Failed to cleanup dead nodes", "error", err)
+	r.runOnce.Do(func() {
+		r.hasRun.Store(true)
+
+		if err := r.cleanupDeadNodes(); err != nil {
+			r.logger.Error("Failed to cleanup dead nodes on startup", "error", err)
+		}
+
+		ticker := time.NewTicker(cleanupTickerInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := r.cleanupDeadNodes(); err != nil {
+					r.logger.Error("Failed to cleanup dead nodes", "error", err)
+				}
 			}
 		}
+	})
+
+	if wasAlreadyRun {
+		panic(fmt.Sprintf("%T.Run() called multiple times", r))
 	}
 }
 

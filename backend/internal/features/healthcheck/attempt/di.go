@@ -1,6 +1,9 @@
 package healthcheck_attempt
 
 import (
+	"sync"
+	"sync/atomic"
+
 	"databasus-backend/internal/features/databases"
 	healthcheck_config "databasus-backend/internal/features/healthcheck/config"
 	"databasus-backend/internal/features/notifiers"
@@ -22,9 +25,11 @@ var checkDatabaseHealthUseCase = &CheckDatabaseHealthUseCase{
 }
 
 var healthcheckAttemptBackgroundService = &HealthcheckAttemptBackgroundService{
-	healthcheck_config.GetHealthcheckConfigService(),
-	checkDatabaseHealthUseCase,
-	logger.GetLogger(),
+	healthcheckConfigService:   healthcheck_config.GetHealthcheckConfigService(),
+	checkDatabaseHealthUseCase: checkDatabaseHealthUseCase,
+	logger:                     logger.GetLogger(),
+	runOnce:                    sync.Once{},
+	hasRun:                     atomic.Bool{},
 }
 var healthcheckAttemptController = &HealthcheckAttemptController{
 	healthcheckAttemptService,

@@ -46,4 +46,8 @@ export const restoreApi = {
       requestOptions,
     );
   },
+
+  async cancelRestore(restoreId: string) {
+    return apiHelper.fetchPostRaw(`${getApplicationServer()}/api/v1/restores/cancel/${restoreId}`);
+  },
 };

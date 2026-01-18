@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"databasus-backend/internal/config"
 	"databasus-backend/internal/features/backups/backups"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
@@ -139,7 +140,7 @@ func Test_MakeRestore_WhenTaskStarts_CacheDeletedImmediately(t *testing.T) {
 	// Cache DB credentials separately
 	dbCache := &RestoreDatabaseCache{
 		PostgresqlDatabase: &postgresql.PostgresqlDatabase{
-			Host:     "localhost",
+			Host:     config.GetEnv().TestLocalhost,
 			Port:     5432,
 			Username: "test",
 			Password: "test",

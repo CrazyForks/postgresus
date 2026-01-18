@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -397,7 +398,7 @@ func connectToMongodbContainer(
 	}
 
 	dbName := "testdb"
-	host := "127.0.0.1"
+	host := config.GetEnv().TestLocalhost
 	username := "root"
 	password := "rootpassword"
 	authDatabase := "admin"
@@ -406,11 +407,18 @@ func connectToMongodbContainer(
 	assert.NoError(t, err)
 
 	uri := fmt.Sprintf(
-		"mongodb://%s:%s@%s:%d/%s?authSource=%s",
-		username, password, host, portInt, dbName, authDatabase,
+		"mongodb://%s:%s@%s:%d/%s?authSource=%s&serverSelectionTimeoutMS=5000&connectTimeoutMS=5000",
+		username,
+		password,
+		host,
+		portInt,
+		dbName,
+		authDatabase,
 	)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	clientOptions := options.Client().ApplyURI(uri)
 	client, err := mongo.Connect(ctx, clientOptions)
 	if err != nil {

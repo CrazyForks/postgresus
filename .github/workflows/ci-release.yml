@@ -9,15 +9,26 @@ on:
 
 jobs:
   lint-backend:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    container:
+      image: golang:1.24.9
+      volumes:
+        - /runner-cache/go-pkg:/go/pkg/mod
+        - /runner-cache/go-build:/root/.cache/go-build
+        - /runner-cache/golangci-lint:/root/.cache/golangci-lint
+        - /runner-cache/apt-archives:/var/cache/apt/archives
     steps:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.24.9"
+      - name: Configure Git for container
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Download Go modules
+        run: |
+          cd backend
+          go mod download
 
       - name: Install golangci-lint
         run: |
@@ -93,34 +104,32 @@ jobs:
           npm run test
 
   test-backend:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [lint-backend]
+    container:
+      image: golang:1.24.9
+      options: --privileged -v /var/run/docker.sock:/var/run/docker.sock --add-host=host.docker.internal:host-gateway
+      volumes:
+        - /runner-cache/go-pkg:/go/pkg/mod
+        - /runner-cache/go-build:/root/.cache/go-build
+        - /runner-cache/apt-archives:/var/cache/apt/archives
     steps:
-      - name: Free up disk space
+      - name: Install Docker CLI
         run: |
-          echo "Disk space before cleanup:"
-          df -h
-          # Remove unnecessary pre-installed software
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf /usr/share/swift
-          # Clean apt cache
-          sudo apt-get clean
-          # Clean docker images (if any pre-installed)
-          docker system prune -af --volumes || true
-          echo "Disk space after cleanup:"
-          df -h
+          apt-get update -qq
+          apt-get install -y -qq docker.io docker-compose netcat-openbsd wget
 
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.24.9"
+      - name: Configure Git for container
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Download Go modules
+        run: |
+          cd backend
+          go mod download
 
       - name: Create .env file for testing
         run: |
@@ -132,14 +141,15 @@ jobs:
           DEV_DB_PASSWORD=Q1234567
           #app
           ENV_MODE=development
-          # db
-          DATABASE_DSN=host=localhost user=postgres password=Q1234567 dbname=databasus port=5437 sslmode=disable
-          DATABASE_URL=postgres://postgres:Q1234567@localhost:5437/databasus?sslmode=disable
+          # db - using 172.17.0.1 to access host from container
+          DATABASE_DSN=host=172.17.0.1 user=postgres password=Q1234567 dbname=databasus port=5437 sslmode=disable
+          DATABASE_URL=postgres://postgres:Q1234567@172.17.0.1:5437/databasus?sslmode=disable
           # migrations
           GOOSE_DRIVER=postgres
-          GOOSE_DBSTRING=postgres://postgres:Q1234567@localhost:5437/databasus?sslmode=disable
+          GOOSE_DBSTRING=postgres://postgres:Q1234567@172.17.0.1:5437/databasus?sslmode=disable
           GOOSE_MIGRATION_DIR=./migrations
-          # testing
+          # testing 
+          TEST_LOCALHOST=172.17.0.1
           # to get Google Drive env variables: add storage in UI and copy data from added storage here 
           TEST_GOOGLE_DRIVE_CLIENT_ID=${{ secrets.TEST_GOOGLE_DRIVE_CLIENT_ID }}
           TEST_GOOGLE_DRIVE_CLIENT_SECRET=${{ secrets.TEST_GOOGLE_DRIVE_CLIENT_SECRET }}
@@ -197,12 +207,14 @@ jobs:
           TEST_MONGODB_60_PORT=27060
           TEST_MONGODB_70_PORT=27070
           TEST_MONGODB_82_PORT=27082
-          # Valkey (cache)
-          VALKEY_HOST=localhost
+          # Valkey (cache) - using 172.17.0.1
+          VALKEY_HOST=172.17.0.1
           VALKEY_PORT=6379
           VALKEY_USERNAME=
           VALKEY_PASSWORD=
           VALKEY_IS_SSL=false
+          # Host for test databases (container -> host)
+          TEST_DB_HOST=172.17.0.1
           EOF
 
       - name: Start test containers
@@ -220,25 +232,25 @@ jobs:
           timeout 60 bash -c 'until docker exec dev-valkey valkey-cli ping 2>/dev/null | grep -q PONG; do sleep 2; done'
           echo "Valkey is ready!"
 
-          # Wait for test databases
-          timeout 60 bash -c 'until nc -z localhost 5000; do sleep 2; done'
-          timeout 60 bash -c 'until nc -z localhost 5001; do sleep 2; done'
-          timeout 60 bash -c 'until nc -z localhost 5002; do sleep 2; done'
-          timeout 60 bash -c 'until nc -z localhost 5003; do sleep 2; done'
-          timeout 60 bash -c 'until nc -z localhost 5004; do sleep 2; done'
-          timeout 60 bash -c 'until nc -z localhost 5005; do sleep 2; done'
+          # Wait for test databases (using 172.17.0.1 from container)
+          timeout 60 bash -c 'until nc -z 172.17.0.1 5000; do sleep 2; done'
+          timeout 60 bash -c 'until nc -z 172.17.0.1 5001; do sleep 2; done'
+          timeout 60 bash -c 'until nc -z 172.17.0.1 5002; do sleep 2; done'
+          timeout 60 bash -c 'until nc -z 172.17.0.1 5003; do sleep 2; done'
+          timeout 60 bash -c 'until nc -z 172.17.0.1 5004; do sleep 2; done'
+          timeout 60 bash -c 'until nc -z 172.17.0.1 5005; do sleep 2; done'
 
           # Wait for MinIO
-          timeout 60 bash -c 'until nc -z localhost 9000; do sleep 2; done'
+          timeout 60 bash -c 'until nc -z 172.17.0.1 9000; do sleep 2; done'
 
           # Wait for Azurite
-          timeout 60 bash -c 'until nc -z localhost 10000; do sleep 2; done'
+          timeout 60 bash -c 'until nc -z 172.17.0.1 10000; do sleep 2; done'
 
           # Wait for FTP
-          timeout 60 bash -c 'until nc -z localhost 7007; do sleep 2; done'
+          timeout 60 bash -c 'until nc -z 172.17.0.1 7007; do sleep 2; done'
 
           # Wait for SFTP
-          timeout 60 bash -c 'until nc -z localhost 7008; do sleep 2; done'
+          timeout 60 bash -c 'until nc -z 172.17.0.1 7008; do sleep 2; done'
 
           # Wait for MySQL containers
           echo "Waiting for MySQL 5.7..."
@@ -297,63 +309,63 @@ jobs:
           mkdir -p databasus-data/backups
           mkdir -p databasus-data/temp
 
-      - name: Install MySQL dependencies
+      - name: Install database client dependencies
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libncurses6
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5
+          apt-get update -qq
+          apt-get install -y -qq libncurses6 libpq5
+          ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5 || true
+          ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5 || true
 
       - name: Setup PostgreSQL, MySQL and MariaDB client tools from pre-built assets
         run: |
           cd backend/tools
-          
+
           # Create directory structure
           mkdir -p postgresql mysql mariadb mongodb/bin
-          
+
           # Copy PostgreSQL client tools (12-18) from pre-built assets
           for version in 12 13 14 15 16 17 18; do
             mkdir -p postgresql/postgresql-$version
             cp -r ../../assets/tools/x64/postgresql/postgresql-$version/bin postgresql/postgresql-$version/
           done
-          
+
           # Copy MySQL client tools (5.7, 8.0, 8.4, 9) from pre-built assets
           for version in 5.7 8.0 8.4 9; do
             mkdir -p mysql/mysql-$version
             cp -r ../../assets/tools/x64/mysql/mysql-$version/bin mysql/mysql-$version/
           done
-          
+
           # Copy MariaDB client tools (10.6, 12.1) from pre-built assets
           for version in 10.6 12.1; do
             mkdir -p mariadb/mariadb-$version
             cp -r ../../assets/tools/x64/mariadb/mariadb-$version/bin mariadb/mariadb-$version/
           done
-          
+
           # Make all binaries executable
           chmod +x postgresql/*/bin/*
           chmod +x mysql/*/bin/*
           chmod +x mariadb/*/bin/*
-          
+
           echo "Pre-built client tools setup complete"
 
       - name: Install MongoDB Database Tools
         run: |
           cd backend/tools
-          
+
           # MongoDB Database Tools must be downloaded (not in pre-built assets)
           # They are backward compatible - single version supports all servers (4.0-8.0)
           MONGODB_TOOLS_URL="https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian12-x86_64-100.10.0.deb"
-          
+
           echo "Downloading MongoDB Database Tools..."
           wget -q "$MONGODB_TOOLS_URL" -O /tmp/mongodb-database-tools.deb
-          
+
           echo "Installing MongoDB Database Tools..."
-          sudo dpkg -i /tmp/mongodb-database-tools.deb || sudo apt-get install -f -y --no-install-recommends
-          
+          dpkg -i /tmp/mongodb-database-tools.deb || apt-get install -f -y --no-install-recommends
+
           # Create symlinks to tools directory
           ln -sf /usr/bin/mongodump mongodb/bin/mongodump
           ln -sf /usr/bin/mongorestore mongodb/bin/mongorestore
-          
+
           rm -f /tmp/mongodb-database-tools.deb
           echo "MongoDB Database Tools installed successfully"
 
@@ -401,10 +413,28 @@ jobs:
         if: always()
         run: |
           cd backend
+          # Stop and remove containers (keeping images for next run)
           docker compose -f docker-compose.yml.example down -v
 
+          # Clean up all data directories created by docker-compose
+          echo "Cleaning up data directories..."
+          rm -rf pgdata || true
+          rm -rf valkey-data || true
+          rm -rf mysqldata || true
+          rm -rf mariadbdata || true
+          rm -rf temp/nas || true
+          rm -rf databasus-data || true
+
+          # Also clean root-level databasus-data if exists
+          cd ..
+          rm -rf databasus-data || true
+
+          echo "Cleanup complete"
+
   determine-version:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    container:
+      image: node:20
     needs: [test-backend, test-frontend]
     if: ${{ github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip-release]') }}
     outputs:
@@ -417,10 +447,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+      - name: Configure Git for container
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Install semver
         run: npm install -g semver
@@ -497,7 +526,7 @@ jobs:
           fi
 
   build-only:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [test-backend, test-frontend]
     if: ${{ github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[skip-release]') }}
     steps:
@@ -529,7 +558,7 @@ jobs:
             databasus/databasus:${{ github.sha }}
 
   build-and-push:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [determine-version]
     if: ${{ needs.determine-version.outputs.should_release == 'true' }}
     permissions:
@@ -564,7 +593,9 @@ jobs:
             databasus/databasus:${{ github.sha }}
 
   release:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    container:
+      image: node:20
     needs: [determine-version, build-and-push]
     if: ${{ needs.determine-version.outputs.should_release == 'true' }}
     permissions:
@@ -576,6 +607,10 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git for container
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Generate changelog
         id: changelog
@@ -670,15 +705,27 @@ jobs:
           prerelease: false
 
   publish-helm-chart:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    container:
+      image: alpine:3.19
+      volumes:
+        - /runner-cache/apk-cache:/etc/apk/cache
     needs: [determine-version, build-and-push]
     if: ${{ needs.determine-version.outputs.should_release == 'true' }}
     permissions:
       contents: read
       packages: write
     steps:
+      - name: Install dependencies
+        run: |
+          apk add --no-cache git bash curl
+
       - name: Check out code
         uses: actions/checkout@v4
+
+      - name: Configure Git for container
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Set up Helm
         uses: azure/setup-helm@v4

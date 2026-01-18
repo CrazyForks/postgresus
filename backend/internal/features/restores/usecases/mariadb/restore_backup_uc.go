@@ -36,6 +36,7 @@ type RestoreMariadbBackupUsecase struct {
 }
 
 func (uc *RestoreMariadbBackupUsecase) Execute(
+	parentCtx context.Context,
 	originalDB *databases.Database,
 	restoringToDB *databases.Database,
 	backupConfig *backups_config.BackupConfig,
@@ -79,6 +80,7 @@ func (uc *RestoreMariadbBackupUsecase) Execute(
 	}
 
 	return uc.restoreFromStorage(
+		parentCtx,
 		originalDB,
 		tools.GetMariadbExecutable(
 			tools.MariadbExecutableMariadb,
@@ -95,6 +97,7 @@ func (uc *RestoreMariadbBackupUsecase) Execute(
 }
 
 func (uc *RestoreMariadbBackupUsecase) restoreFromStorage(
+	parentCtx context.Context,
 	database *databases.Database,
 	mariadbBin string,
 	args []string,
@@ -103,7 +106,7 @@ func (uc *RestoreMariadbBackupUsecase) restoreFromStorage(
 	storage *storages.Storage,
 	mdbConfig *mariadbtypes.MariadbDatabase,
 ) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
+	ctx, cancel := context.WithTimeout(parentCtx, 60*time.Minute)
 	defer cancel()
 
 	go func() {
@@ -112,6 +115,9 @@ func (uc *RestoreMariadbBackupUsecase) restoreFromStorage(
 		for {
 			select {
 			case <-ctx.Done():
+				return
+			case <-parentCtx.Done():
+				cancel()
 				return
 			case <-ticker.C:
 				if config.IsShouldShutdown() {
@@ -212,6 +218,15 @@ func (uc *RestoreMariadbBackupUsecase) executeMariadbRestore(
 
 	waitErr := cmd.Wait()
 	stderrOutput := <-stderrCh
+
+	// Check for cancellation
+	select {
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return fmt.Errorf("restore cancelled")
+		}
+	default:
+	}
 
 	if config.IsShouldShutdown() {
 		return fmt.Errorf("restore cancelled due to shutdown")

@@ -3,12 +3,15 @@ package restoring
 import (
 	"context"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"databasus-backend/internal/config"
 	"databasus-backend/internal/features/backups/backups"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
@@ -17,6 +20,7 @@ import (
 	restores_core "databasus-backend/internal/features/restores/core"
 	"databasus-backend/internal/features/restores/usecases"
 	"databasus-backend/internal/features/storages"
+	tasks_cancellation "databasus-backend/internal/features/tasks/cancellation"
 	workspaces_controllers "databasus-backend/internal/features/workspaces/controllers"
 	workspaces_testing "databasus-backend/internal/features/workspaces/testing"
 	"databasus-backend/internal/util/encryption"
@@ -36,18 +40,59 @@ func CreateTestRouter() *gin.Engine {
 
 func CreateTestRestorerNode() *RestorerNode {
 	return &RestorerNode{
-		uuid.New(),
-		databases.GetDatabaseService(),
-		backups.GetBackupService(),
-		encryption.GetFieldEncryptor(),
+		nodeID:               uuid.New(),
+		databaseService:      databases.GetDatabaseService(),
+		backupService:        backups.GetBackupService(),
+		fieldEncryptor:       encryption.GetFieldEncryptor(),
+		restoreRepository:    restoreRepository,
+		backupConfigService:  backups_config.GetBackupConfigService(),
+		storageService:       storages.GetStorageService(),
+		restoreNodesRegistry: restoreNodesRegistry,
+		logger:               logger.GetLogger(),
+		restoreBackupUsecase: usecases.GetRestoreBackupUsecase(),
+		cacheUtil:            restoreDatabaseCache,
+		restoreCancelManager: tasks_cancellation.GetTaskCancelManager(),
+		lastHeartbeat:        time.Time{},
+		runOnce:              sync.Once{},
+		hasRun:               atomic.Bool{},
+	}
+}
+
+func CreateTestRestorerNodeWithUsecase(usecase restores_core.RestoreBackupUsecase) *RestorerNode {
+	return &RestorerNode{
+		nodeID:               uuid.New(),
+		databaseService:      databases.GetDatabaseService(),
+		backupService:        backups.GetBackupService(),
+		fieldEncryptor:       encryption.GetFieldEncryptor(),
+		restoreRepository:    restoreRepository,
+		backupConfigService:  backups_config.GetBackupConfigService(),
+		storageService:       storages.GetStorageService(),
+		restoreNodesRegistry: restoreNodesRegistry,
+		logger:               logger.GetLogger(),
+		restoreBackupUsecase: usecase,
+		cacheUtil:            restoreDatabaseCache,
+		restoreCancelManager: tasks_cancellation.GetTaskCancelManager(),
+		lastHeartbeat:        time.Time{},
+		runOnce:              sync.Once{},
+		hasRun:               atomic.Bool{},
+	}
+}
+
+func CreateTestRestoresScheduler() *RestoresScheduler {
+	return &RestoresScheduler{
 		restoreRepository,
-		backups_config.GetBackupConfigService(),
+		backups.GetBackupService(),
 		storages.GetStorageService(),
+		backups_config.GetBackupConfigService(),
 		restoreNodesRegistry,
+		time.Now().UTC(),
 		logger.GetLogger(),
-		usecases.GetRestoreBackupUsecase(),
+		make(map[uuid.UUID]RestoreToNodeRelation),
+		restorerNode,
 		restoreDatabaseCache,
-		time.Time{},
+		uuid.Nil,
+		sync.Once{},
+		atomic.Bool{},
 	}
 }
 
@@ -128,13 +173,13 @@ func StartRestorerNodeForTest(t *testing.T, restorerNode *RestorerNode) context.
 // StartSchedulerForTest starts the RestoresScheduler in a goroutine for testing.
 // The scheduler subscribes to task completions and manages restore lifecycle.
 // Returns a context cancel function that should be deferred to stop the scheduler.
-func StartSchedulerForTest(t *testing.T) context.CancelFunc {
+func StartSchedulerForTest(t *testing.T, scheduler *RestoresScheduler) context.CancelFunc {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan struct{})
 
 	go func() {
-		GetRestoresScheduler().Run(ctx)
+		scheduler.Run(ctx)
 		close(done)
 	}()
 
@@ -275,7 +320,7 @@ func CreateTestRestore(
 		BackupID: backup.ID,
 		Status:   status,
 		PostgresqlDatabase: &postgresql.PostgresqlDatabase{
-			Host:     "localhost",
+			Host:     config.GetEnv().TestLocalhost,
 			Port:     5432,
 			Username: "test",
 			Password: "test",

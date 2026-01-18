@@ -1,6 +1,9 @@
 package backups
 
 import (
+	"sync"
+	"sync/atomic"
+
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/backups/backups/backuping"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
@@ -52,11 +55,26 @@ func GetBackupController() *BackupController {
 	return backupController
 }
 
-func SetupDependencies() {
-	backups_config.
-		GetBackupConfigService().
-		SetDatabaseStorageChangeListener(backupService)
+var (
+	setupOnce sync.Once
+	isSetup   atomic.Bool
+)
 
-	databases.GetDatabaseService().AddDbRemoveListener(backupService)
-	databases.GetDatabaseService().AddDbCopyListener(backups_config.GetBackupConfigService())
+func SetupDependencies() {
+	wasAlreadySetup := isSetup.Load()
+
+	setupOnce.Do(func() {
+		backups_config.
+			GetBackupConfigService().
+			SetDatabaseStorageChangeListener(backupService)
+
+		databases.GetDatabaseService().AddDbRemoveListener(backupService)
+		databases.GetDatabaseService().AddDbCopyListener(backups_config.GetBackupConfigService())
+
+		isSetup.Store(true)
+	})
+
+	if wasAlreadySetup {
+		logger.GetLogger().Warn("SetupDependencies called multiple times, ignoring subsequent call")
+	}
 }

@@ -35,6 +35,7 @@ type RestorePostgresqlBackupUsecase struct {
 }
 
 func (uc *RestorePostgresqlBackupUsecase) Execute(
+	parentCtx context.Context,
 	originalDB *databases.Database,
 	restoringToDB *databases.Database,
 	backupConfig *backups_config.BackupConfig,
@@ -73,6 +74,7 @@ func (uc *RestorePostgresqlBackupUsecase) Execute(
 
 	// All PostgreSQL backups are now custom format (-Fc)
 	return uc.restoreCustomType(
+		parentCtx,
 		originalDB,
 		pgBin,
 		backup,
@@ -84,6 +86,7 @@ func (uc *RestorePostgresqlBackupUsecase) Execute(
 
 // restoreCustomType restores a backup in custom type (-Fc)
 func (uc *RestorePostgresqlBackupUsecase) restoreCustomType(
+	parentCtx context.Context,
 	originalDB *databases.Database,
 	pgBin string,
 	backup *backups_core.Backup,
@@ -102,15 +105,24 @@ func (uc *RestorePostgresqlBackupUsecase) restoreCustomType(
 	// If excluding extensions, we must use file-based restore (requires TOC file generation)
 	// Also use file-based restore for parallel jobs (multiple CPUs)
 	if isExcludeExtensions || pg.CpuCount > 1 {
-		return uc.restoreViaFile(originalDB, pgBin, backup, storage, pg, isExcludeExtensions)
+		return uc.restoreViaFile(
+			parentCtx,
+			originalDB,
+			pgBin,
+			backup,
+			storage,
+			pg,
+			isExcludeExtensions,
+		)
 	}
 
 	// Single CPU without extension exclusion: stream directly via stdin
-	return uc.restoreViaStdin(originalDB, pgBin, backup, storage, pg)
+	return uc.restoreViaStdin(parentCtx, originalDB, pgBin, backup, storage, pg)
 }
 
 // restoreViaStdin streams backup via stdin for single CPU restore
 func (uc *RestorePostgresqlBackupUsecase) restoreViaStdin(
+	parentCtx context.Context,
 	originalDB *databases.Database,
 	pgBin string,
 	backup *backups_core.Backup,
@@ -133,10 +145,10 @@ func (uc *RestorePostgresqlBackupUsecase) restoreViaStdin(
 		"--no-acl",
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
+	ctx, cancel := context.WithTimeout(parentCtx, 60*time.Minute)
 	defer cancel()
 
-	// Monitor for shutdown and cancel context if needed
+	// Monitor for shutdown and parent cancellation
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
@@ -144,6 +156,9 @@ func (uc *RestorePostgresqlBackupUsecase) restoreViaStdin(
 		for {
 			select {
 			case <-ctx.Done():
+				return
+			case <-parentCtx.Done():
+				cancel()
 				return
 			case <-ticker.C:
 				if config.IsShouldShutdown() {
@@ -296,6 +311,15 @@ func (uc *RestorePostgresqlBackupUsecase) restoreViaStdin(
 	stderrOutput := <-stderrCh
 	copyErr := <-copyErrCh
 
+	// Check for cancellation
+	select {
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return fmt.Errorf("restore cancelled")
+		}
+	default:
+	}
+
 	// Check for shutdown before finalizing
 	if config.IsShouldShutdown() {
 		return fmt.Errorf("restore cancelled due to shutdown")
@@ -307,6 +331,15 @@ func (uc *RestorePostgresqlBackupUsecase) restoreViaStdin(
 	}
 
 	if waitErr != nil {
+		// Check for cancellation again
+		select {
+		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return fmt.Errorf("restore cancelled")
+			}
+		default:
+		}
+
 		if config.IsShouldShutdown() {
 			return fmt.Errorf("restore cancelled due to shutdown")
 		}
@@ -319,6 +352,7 @@ func (uc *RestorePostgresqlBackupUsecase) restoreViaStdin(
 
 // restoreViaFile downloads backup and uses parallel jobs for multi-CPU restore
 func (uc *RestorePostgresqlBackupUsecase) restoreViaFile(
+	parentCtx context.Context,
 	originalDB *databases.Database,
 	pgBin string,
 	backup *backups_core.Backup,
@@ -354,6 +388,7 @@ func (uc *RestorePostgresqlBackupUsecase) restoreViaFile(
 	}
 
 	return uc.restoreFromStorage(
+		parentCtx,
 		originalDB,
 		pgBin,
 		args,
@@ -367,6 +402,7 @@ func (uc *RestorePostgresqlBackupUsecase) restoreViaFile(
 
 // restoreFromStorage restores backup data from storage using pg_restore
 func (uc *RestorePostgresqlBackupUsecase) restoreFromStorage(
+	parentCtx context.Context,
 	database *databases.Database,
 	pgBin string,
 	args []string,
@@ -386,10 +422,10 @@ func (uc *RestorePostgresqlBackupUsecase) restoreFromStorage(
 		isExcludeExtensions,
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
+	ctx, cancel := context.WithTimeout(parentCtx, 60*time.Minute)
 	defer cancel()
 
-	// Monitor for shutdown and cancel context if needed
+	// Monitor for shutdown and parent cancellation
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
@@ -397,6 +433,9 @@ func (uc *RestorePostgresqlBackupUsecase) restoreFromStorage(
 		for {
 			select {
 			case <-ctx.Done():
+				return
+			case <-parentCtx.Done():
+				cancel()
 				return
 			case <-ticker.C:
 				if config.IsShouldShutdown() {
@@ -624,12 +663,30 @@ func (uc *RestorePostgresqlBackupUsecase) executePgRestore(
 	waitErr := cmd.Wait()
 	stderrOutput := <-stderrCh
 
+	// Check for cancellation
+	select {
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return fmt.Errorf("restore cancelled")
+		}
+	default:
+	}
+
 	// Check for shutdown before finalizing
 	if config.IsShouldShutdown() {
 		return fmt.Errorf("restore cancelled due to shutdown")
 	}
 
 	if waitErr != nil {
+		// Check for cancellation again
+		select {
+		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return fmt.Errorf("restore cancelled")
+			}
+		default:
+		}
+
 		if config.IsShouldShutdown() {
 			return fmt.Errorf("restore cancelled due to shutdown")
 		}

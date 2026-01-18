@@ -3,6 +3,8 @@ package backuping
 import (
 	"context"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,19 +37,37 @@ func CreateTestRouter() *gin.Engine {
 
 func CreateTestBackuperNode() *BackuperNode {
 	return &BackuperNode{
-		databases.GetDatabaseService(),
-		encryption.GetFieldEncryptor(),
-		workspaces_services.GetWorkspaceService(),
+		databaseService:     databases.GetDatabaseService(),
+		fieldEncryptor:      encryption.GetFieldEncryptor(),
+		workspaceService:    workspaces_services.GetWorkspaceService(),
+		backupRepository:    backupRepository,
+		backupConfigService: backups_config.GetBackupConfigService(),
+		storageService:      storages.GetStorageService(),
+		notificationSender:  notifiers.GetNotifierService(),
+		backupCancelManager: taskCancelManager,
+		backupNodesRegistry: backupNodesRegistry,
+		logger:              logger.GetLogger(),
+		createBackupUseCase: usecases.GetCreateBackupUsecase(),
+		nodeID:              uuid.New(),
+		lastHeartbeat:       time.Time{},
+		runOnce:             sync.Once{},
+		hasRun:              atomic.Bool{},
+	}
+}
+
+func CreateTestScheduler() *BackupsScheduler {
+	return &BackupsScheduler{
 		backupRepository,
 		backups_config.GetBackupConfigService(),
 		storages.GetStorageService(),
-		notifiers.GetNotifierService(),
 		taskCancelManager,
 		backupNodesRegistry,
+		time.Now().UTC(),
 		logger.GetLogger(),
-		usecases.GetCreateBackupUsecase(),
-		uuid.New(),
-		time.Time{},
+		make(map[uuid.UUID]BackupToNodeRelation),
+		CreateTestBackuperNode(),
+		sync.Once{},
+		atomic.Bool{},
 	}
 }
 
@@ -141,13 +161,13 @@ func StartBackuperNodeForTest(t *testing.T, backuperNode *BackuperNode) context.
 // StartSchedulerForTest starts the BackupsScheduler in a goroutine for testing.
 // The scheduler subscribes to task completions and manages backup lifecycle.
 // Returns a context cancel function that should be deferred to stop the scheduler.
-func StartSchedulerForTest(t *testing.T) context.CancelFunc {
+func StartSchedulerForTest(t *testing.T, scheduler *BackupsScheduler) context.CancelFunc {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan struct{})
 
 	go func() {
-		GetBackupsScheduler().Run(ctx)
+		scheduler.Run(ctx)
 		close(done)
 	}()
 

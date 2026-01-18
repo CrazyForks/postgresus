@@ -1,6 +1,9 @@
 package healthcheck_config
 
 import (
+	"sync"
+	"sync/atomic"
+
 	"databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/databases"
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
@@ -27,8 +30,23 @@ func GetHealthcheckConfigController() *HealthcheckConfigController {
 	return healthcheckConfigController
 }
 
+var (
+	setupOnce sync.Once
+	isSetup   atomic.Bool
+)
+
 func SetupDependencies() {
-	databases.
-		GetDatabaseService().
-		AddDbCreationListener(healthcheckConfigService)
+	wasAlreadySetup := isSetup.Load()
+
+	setupOnce.Do(func() {
+		databases.
+			GetDatabaseService().
+			AddDbCreationListener(healthcheckConfigService)
+
+		isSetup.Store(true)
+	})
+
+	if wasAlreadySetup {
+		logger.GetLogger().Warn("SetupDependencies called multiple times, ignoring subsequent call")
+	}
 }

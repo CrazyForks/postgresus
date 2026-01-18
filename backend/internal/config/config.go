@@ -29,6 +29,8 @@ type EnvVariables struct {
 	MariadbInstallDir    string            `env:"MARIADB_INSTALL_DIR"`
 	MongodbInstallDir    string            `env:"MONGODB_INSTALL_DIR"`
 
+	TestLocalhost string `env:"TEST_LOCALHOST"`
+
 	ShowDbInstallationVerificationLogs bool `env:"SHOW_DB_INSTALLATION_VERIFICATION_LOGS"`
 
 	IsManyNodesMode          bool `env:"IS_MANY_NODES_MODE"`
@@ -235,6 +237,10 @@ func loadEnvVariables() {
 	if !env.IsManyNodesMode {
 		env.IsPrimaryNode = true
 		env.IsProcessingNode = true
+	}
+
+	if env.TestLocalhost == "" {
+		env.TestLocalhost = "localhost"
 	}
 
 	// Valkey

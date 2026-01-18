@@ -2,30 +2,47 @@ package healthcheck_attempt
 
 import (
 	"context"
-	healthcheck_config "databasus-backend/internal/features/healthcheck/config"
+	"fmt"
 	"log/slog"
+	"sync"
+	"sync/atomic"
 	"time"
+
+	healthcheck_config "databasus-backend/internal/features/healthcheck/config"
 )
 
 type HealthcheckAttemptBackgroundService struct {
 	healthcheckConfigService   *healthcheck_config.HealthcheckConfigService
 	checkDatabaseHealthUseCase *CheckDatabaseHealthUseCase
 	logger                     *slog.Logger
+
+	runOnce sync.Once
+	hasRun  atomic.Bool
 }
 
 func (s *HealthcheckAttemptBackgroundService) Run(ctx context.Context) {
-	// first healthcheck immediately
-	s.checkDatabases()
+	wasAlreadyRun := s.hasRun.Load()
 
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.checkDatabases()
+	s.runOnce.Do(func() {
+		s.hasRun.Store(true)
+
+		// first healthcheck immediately
+		s.checkDatabases()
+
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.checkDatabases()
+			}
 		}
+	})
+
+	if wasAlreadyRun {
+		panic(fmt.Sprintf("%T.Run() called multiple times", s))
 	}
 }
 

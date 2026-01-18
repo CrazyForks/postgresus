@@ -2,33 +2,49 @@ package backups_download
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type DownloadTokenBackgroundService struct {
 	downloadTokenService *DownloadTokenService
 	logger               *slog.Logger
+
+	runOnce sync.Once
+	hasRun  atomic.Bool
 }
 
 func (s *DownloadTokenBackgroundService) Run(ctx context.Context) {
-	s.logger.Info("Starting download token cleanup background service")
+	wasAlreadyRun := s.hasRun.Load()
 
-	if ctx.Err() != nil {
-		return
-	}
+	s.runOnce.Do(func() {
+		s.hasRun.Store(true)
 
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
+		s.logger.Info("Starting download token cleanup background service")
 
-	for {
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return
-		case <-ticker.C:
-			if err := s.downloadTokenService.CleanExpiredTokens(); err != nil {
-				s.logger.Error("Failed to clean expired download tokens", "error", err)
+		}
+
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := s.downloadTokenService.CleanExpiredTokens(); err != nil {
+					s.logger.Error("Failed to clean expired download tokens", "error", err)
+				}
 			}
 		}
+	})
+
+	if wasAlreadyRun {
+		panic(fmt.Sprintf("%T.Run() called multiple times", s))
 	}
 }

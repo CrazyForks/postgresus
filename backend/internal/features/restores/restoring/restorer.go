@@ -2,8 +2,12 @@ package restoring
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,6 +18,7 @@ import (
 	"databasus-backend/internal/features/databases"
 	restores_core "databasus-backend/internal/features/restores/core"
 	"databasus-backend/internal/features/storages"
+	tasks_cancellation "databasus-backend/internal/features/tasks/cancellation"
 	cache_utils "databasus-backend/internal/util/cache"
 	util_encryption "databasus-backend/internal/util/encryption"
 )
@@ -36,70 +41,84 @@ type RestorerNode struct {
 	logger               *slog.Logger
 	restoreBackupUsecase restores_core.RestoreBackupUsecase
 	cacheUtil            *cache_utils.CacheUtil[RestoreDatabaseCache]
+	restoreCancelManager *tasks_cancellation.TaskCancelManager
 
 	lastHeartbeat time.Time
+
+	runOnce sync.Once
+	hasRun  atomic.Bool
 }
 
 func (n *RestorerNode) Run(ctx context.Context) {
-	n.lastHeartbeat = time.Now().UTC()
+	wasAlreadyRun := n.hasRun.Load()
 
-	throughputMBs := config.GetEnv().NodeNetworkThroughputMBs
+	n.runOnce.Do(func() {
+		n.hasRun.Store(true)
 
-	restoreNode := RestoreNode{
-		ID:            n.nodeID,
-		ThroughputMBs: throughputMBs,
-	}
+		n.lastHeartbeat = time.Now().UTC()
 
-	if err := n.restoreNodesRegistry.HearthbeatNodeInRegistry(time.Now().UTC(), restoreNode); err != nil {
-		n.logger.Error("Failed to register node in registry", "error", err)
-		panic(err)
-	}
+		throughputMBs := config.GetEnv().NodeNetworkThroughputMBs
 
-	restoreHandler := func(restoreID uuid.UUID, isCallNotifier bool) {
-		n.MakeRestore(restoreID)
-		if err := n.restoreNodesRegistry.PublishRestoreCompletion(n.nodeID, restoreID); err != nil {
-			n.logger.Error(
-				"Failed to publish restore completion",
-				"error",
-				err,
-				"restoreID",
-				restoreID,
-			)
+		restoreNode := RestoreNode{
+			ID:            n.nodeID,
+			ThroughputMBs: throughputMBs,
 		}
-	}
 
-	err := n.restoreNodesRegistry.SubscribeNodeForRestoresAssignment(
-		n.nodeID,
-		restoreHandler,
-	)
-	if err != nil {
-		n.logger.Error("Failed to subscribe to restore assignments", "error", err)
-		panic(err)
-	}
-	defer func() {
-		if err := n.restoreNodesRegistry.UnsubscribeNodeForRestoresAssignments(); err != nil {
-			n.logger.Error("Failed to unsubscribe from restore assignments", "error", err)
+		if err := n.restoreNodesRegistry.HearthbeatNodeInRegistry(time.Now().UTC(), restoreNode); err != nil {
+			n.logger.Error("Failed to register node in registry", "error", err)
+			panic(err)
 		}
-	}()
 
-	ticker := time.NewTicker(heartbeatTickerInterval)
-	defer ticker.Stop()
-
-	n.logger.Info("Restore node started", "nodeID", n.nodeID, "throughput", throughputMBs)
-
-	for {
-		select {
-		case <-ctx.Done():
-			n.logger.Info("Shutdown signal received, unregistering node", "nodeID", n.nodeID)
-
-			if err := n.restoreNodesRegistry.UnregisterNodeFromRegistry(restoreNode); err != nil {
-				n.logger.Error("Failed to unregister node from registry", "error", err)
+		restoreHandler := func(restoreID uuid.UUID, isCallNotifier bool) {
+			n.MakeRestore(restoreID)
+			if err := n.restoreNodesRegistry.PublishRestoreCompletion(n.nodeID, restoreID); err != nil {
+				n.logger.Error(
+					"Failed to publish restore completion",
+					"error",
+					err,
+					"restoreID",
+					restoreID,
+				)
 			}
-
-			return
-		case <-ticker.C:
-			n.sendHeartbeat(&restoreNode)
 		}
+
+		err := n.restoreNodesRegistry.SubscribeNodeForRestoresAssignment(
+			n.nodeID,
+			restoreHandler,
+		)
+		if err != nil {
+			n.logger.Error("Failed to subscribe to restore assignments", "error", err)
+			panic(err)
+		}
+		defer func() {
+			if err := n.restoreNodesRegistry.UnsubscribeNodeForRestoresAssignments(); err != nil {
+				n.logger.Error("Failed to unsubscribe from restore assignments", "error", err)
+			}
+		}()
+
+		ticker := time.NewTicker(heartbeatTickerInterval)
+		defer ticker.Stop()
+
+		n.logger.Info("Restore node started", "nodeID", n.nodeID, "throughput", throughputMBs)
+
+		for {
+			select {
+			case <-ctx.Done():
+				n.logger.Info("Shutdown signal received, unregistering node", "nodeID", n.nodeID)
+
+				if err := n.restoreNodesRegistry.UnregisterNodeFromRegistry(restoreNode); err != nil {
+					n.logger.Error("Failed to unregister node from registry", "error", err)
+				}
+
+				return
+			case <-ticker.C:
+				n.sendHeartbeat(&restoreNode)
+			}
+		}
+	})
+
+	if wasAlreadyRun {
+		panic(fmt.Sprintf("%T.Run() called multiple times", n))
 	}
 }
 
@@ -176,6 +195,11 @@ func (n *RestorerNode) MakeRestore(restoreID uuid.UUID) {
 
 	start := time.Now().UTC()
 
+	// Create cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+	n.restoreCancelManager.RegisterTask(restore.ID, cancel)
+	defer n.restoreCancelManager.UnregisterTask(restore.ID)
+
 	// Create restoring database from cached credentials
 	restoringToDB := &databases.Database{
 		Type:       database.Type,
@@ -204,6 +228,7 @@ func (n *RestorerNode) MakeRestore(restoreID uuid.UUID) {
 	}
 
 	err = n.restoreBackupUsecase.Execute(
+		ctx,
 		backupConfig,
 		*restore,
 		database,
@@ -215,6 +240,29 @@ func (n *RestorerNode) MakeRestore(restoreID uuid.UUID) {
 
 	if err != nil {
 		errMsg := err.Error()
+
+		// Check if restore was cancelled
+		isCancelled := strings.Contains(errMsg, "restore cancelled") ||
+			strings.Contains(errMsg, "context canceled") ||
+			errors.Is(err, context.Canceled)
+		isShutdown := strings.Contains(errMsg, "shutdown")
+
+		if isCancelled && !isShutdown {
+			n.logger.Warn("Restore was cancelled by user or system",
+				"restoreId", restore.ID,
+				"isCancelled", isCancelled,
+				"isShutdown", isShutdown,
+			)
+
+			restore.Status = restores_core.RestoreStatusCanceled
+			restore.RestoreDurationMs = time.Since(start).Milliseconds()
+
+			if err := n.restoreRepository.Save(restore); err != nil {
+				n.logger.Error("Failed to save cancelled restore", "error", err)
+			}
+
+			return
+		}
 
 		n.logger.Error("Restore execution failed",
 			"restoreId", restore.ID,

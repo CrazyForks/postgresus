@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -594,11 +596,13 @@ func Test_CleanupDeadNodes_RemovesNodeInfoAndCounter(t *testing.T) {
 
 func createTestRegistry() *BackupNodesRegistry {
 	return &BackupNodesRegistry{
-		cache_utils.GetValkeyClient(),
-		logger.GetLogger(),
-		cache_utils.DefaultCacheTimeout,
-		cache_utils.NewPubSubManager(),
-		cache_utils.NewPubSubManager(),
+		client:            cache_utils.GetValkeyClient(),
+		logger:            logger.GetLogger(),
+		timeout:           cache_utils.DefaultCacheTimeout,
+		pubsubBackups:     cache_utils.NewPubSubManager(),
+		pubsubCompletions: cache_utils.NewPubSubManager(),
+		runOnce:           sync.Once{},
+		hasRun:            atomic.Bool{},
 	}
 }
 

@@ -605,7 +605,7 @@ func connectToMariadbContainer(
 	dbName := "testdb"
 	password := "rootpassword"
 	username := "root"
-	host := "127.0.0.1"
+	host := config.GetEnv().TestLocalhost
 
 	portInt, err := strconv.Atoi(port)
 	if err != nil {

@@ -36,6 +36,7 @@ type RestoreMongodbBackupUsecase struct {
 }
 
 func (uc *RestoreMongodbBackupUsecase) Execute(
+	parentCtx context.Context,
 	originalDB *databases.Database,
 	restoringToDB *databases.Database,
 	backupConfig *backups_config.BackupConfig,
@@ -76,6 +77,7 @@ func (uc *RestoreMongodbBackupUsecase) Execute(
 	args := uc.buildMongorestoreArgs(mdb, decryptedPassword, sourceDatabase)
 
 	return uc.restoreFromStorage(
+		parentCtx,
 		tools.GetMongodbExecutable(
 			tools.MongodbExecutableMongorestore,
 			config.GetEnv().EnvMode,
@@ -122,12 +124,13 @@ func (uc *RestoreMongodbBackupUsecase) buildMongorestoreArgs(
 }
 
 func (uc *RestoreMongodbBackupUsecase) restoreFromStorage(
+	parentCtx context.Context,
 	mongorestoreBin string,
 	args []string,
 	backup *backups_core.Backup,
 	storage *storages.Storage,
 ) error {
-	ctx, cancel := context.WithTimeout(context.Background(), restoreTimeout)
+	ctx, cancel := context.WithTimeout(parentCtx, restoreTimeout)
 	defer cancel()
 
 	go func() {
@@ -136,6 +139,9 @@ func (uc *RestoreMongodbBackupUsecase) restoreFromStorage(
 		for {
 			select {
 			case <-ctx.Done():
+				return
+			case <-parentCtx.Done():
+				cancel()
 				return
 			case <-ticker.C:
 				if config.IsShouldShutdown() {
@@ -217,6 +223,15 @@ func (uc *RestoreMongodbBackupUsecase) executeMongoRestore(
 
 	waitErr := cmd.Wait()
 	stderrOutput := <-stderrCh
+
+	// Check for cancellation
+	select {
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return fmt.Errorf("restore cancelled")
+		}
+	default:
+	}
 
 	if config.IsShouldShutdown() {
 		return fmt.Errorf("restore cancelled due to shutdown")

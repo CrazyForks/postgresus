@@ -2,6 +2,17 @@ package backuping
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"slices"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/google/uuid"
+
 	"databasus-backend/internal/config"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
@@ -10,14 +21,6 @@ import (
 	tasks_cancellation "databasus-backend/internal/features/tasks/cancellation"
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
 	util_encryption "databasus-backend/internal/util/encryption"
-	"errors"
-	"fmt"
-	"log/slog"
-	"slices"
-	"strings"
-	"time"
-
-	"github.com/google/uuid"
 )
 
 const (
@@ -40,66 +43,79 @@ type BackuperNode struct {
 	nodeID              uuid.UUID
 
 	lastHeartbeat time.Time
+
+	runOnce sync.Once
+	hasRun  atomic.Bool
 }
 
 func (n *BackuperNode) Run(ctx context.Context) {
-	n.lastHeartbeat = time.Now().UTC()
+	wasAlreadyRun := n.hasRun.Load()
 
-	throughputMBs := config.GetEnv().NodeNetworkThroughputMBs
+	n.runOnce.Do(func() {
+		n.hasRun.Store(true)
 
-	backupNode := BackupNode{
-		ID:            n.nodeID,
-		ThroughputMBs: throughputMBs,
-		LastHeartbeat: time.Now().UTC(),
-	}
+		n.lastHeartbeat = time.Now().UTC()
 
-	if err := n.backupNodesRegistry.HearthbeatNodeInRegistry(time.Now().UTC(), backupNode); err != nil {
-		n.logger.Error("Failed to register node in registry", "error", err)
-		panic(err)
-	}
+		throughputMBs := config.GetEnv().NodeNetworkThroughputMBs
 
-	backupHandler := func(backupID uuid.UUID, isCallNotifier bool) {
-		n.MakeBackup(backupID, isCallNotifier)
-		if err := n.backupNodesRegistry.PublishBackupCompletion(n.nodeID, backupID); err != nil {
-			n.logger.Error(
-				"Failed to publish backup completion",
-				"error",
-				err,
-				"backupID",
-				backupID,
-			)
+		backupNode := BackupNode{
+			ID:            n.nodeID,
+			ThroughputMBs: throughputMBs,
+			LastHeartbeat: time.Now().UTC(),
 		}
-	}
 
-	err := n.backupNodesRegistry.SubscribeNodeForBackupsAssignment(n.nodeID, backupHandler)
-	if err != nil {
-		n.logger.Error("Failed to subscribe to backup assignments", "error", err)
-		panic(err)
-	}
-	defer func() {
-		if err := n.backupNodesRegistry.UnsubscribeNodeForBackupsAssignments(); err != nil {
-			n.logger.Error("Failed to unsubscribe from backup assignments", "error", err)
+		if err := n.backupNodesRegistry.HearthbeatNodeInRegistry(time.Now().UTC(), backupNode); err != nil {
+			n.logger.Error("Failed to register node in registry", "error", err)
+			panic(err)
 		}
-	}()
 
-	ticker := time.NewTicker(heartbeatTickerInterval)
-	defer ticker.Stop()
-
-	n.logger.Info("Backup node started", "nodeID", n.nodeID, "throughput", throughputMBs)
-
-	for {
-		select {
-		case <-ctx.Done():
-			n.logger.Info("Shutdown signal received, unregistering node", "nodeID", n.nodeID)
-
-			if err := n.backupNodesRegistry.UnregisterNodeFromRegistry(backupNode); err != nil {
-				n.logger.Error("Failed to unregister node from registry", "error", err)
+		backupHandler := func(backupID uuid.UUID, isCallNotifier bool) {
+			n.MakeBackup(backupID, isCallNotifier)
+			if err := n.backupNodesRegistry.PublishBackupCompletion(n.nodeID, backupID); err != nil {
+				n.logger.Error(
+					"Failed to publish backup completion",
+					"error",
+					err,
+					"backupID",
+					backupID,
+				)
 			}
-
-			return
-		case <-ticker.C:
-			n.sendHeartbeat(&backupNode)
 		}
+
+		err := n.backupNodesRegistry.SubscribeNodeForBackupsAssignment(n.nodeID, backupHandler)
+		if err != nil {
+			n.logger.Error("Failed to subscribe to backup assignments", "error", err)
+			panic(err)
+		}
+		defer func() {
+			if err := n.backupNodesRegistry.UnsubscribeNodeForBackupsAssignments(); err != nil {
+				n.logger.Error("Failed to unsubscribe from backup assignments", "error", err)
+			}
+		}()
+
+		ticker := time.NewTicker(heartbeatTickerInterval)
+		defer ticker.Stop()
+
+		n.logger.Info("Backup node started", "nodeID", n.nodeID, "throughput", throughputMBs)
+
+		for {
+			select {
+			case <-ctx.Done():
+				n.logger.Info("Shutdown signal received, unregistering node", "nodeID", n.nodeID)
+
+				if err := n.backupNodesRegistry.UnregisterNodeFromRegistry(backupNode); err != nil {
+					n.logger.Error("Failed to unregister node from registry", "error", err)
+				}
+
+				return
+			case <-ticker.C:
+				n.sendHeartbeat(&backupNode)
+			}
+		}
+	})
+
+	if wasAlreadyRun {
+		panic(fmt.Sprintf("%T.Run() called multiple times", n))
 	}
 }
 

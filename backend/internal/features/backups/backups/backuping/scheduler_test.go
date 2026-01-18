@@ -835,7 +835,8 @@ func Test_StartBackup_WhenBackupCompletes_DecrementsActiveTaskCount(t *testing.T
 	cache_utils.ClearAllCache()
 
 	// Start scheduler so it can handle task completions
-	schedulerCancel := StartSchedulerForTest(t)
+	scheduler := CreateTestScheduler()
+	schedulerCancel := StartSchedulerForTest(t, scheduler)
 	defer schedulerCancel()
 
 	backuperNode := CreateTestBackuperNode()
@@ -891,7 +892,7 @@ func Test_StartBackup_WhenBackupCompletes_DecrementsActiveTaskCount(t *testing.T
 	t.Logf("Initial active tasks: %d", initialActiveTasks)
 
 	// Start backup
-	GetBackupsScheduler().StartBackup(database.ID, false)
+	scheduler.StartBackup(database.ID, false)
 
 	// Wait for backup to complete
 	WaitForBackupCompletion(t, database.ID, 0, 10*time.Second)
@@ -930,7 +931,8 @@ func Test_StartBackup_WhenBackupFails_DecrementsActiveTaskCount(t *testing.T) {
 	cache_utils.ClearAllCache()
 
 	// Start scheduler so it can handle task completions
-	schedulerCancel := StartSchedulerForTest(t)
+	scheduler := CreateTestScheduler()
+	schedulerCancel := StartSchedulerForTest(t, scheduler)
 	defer schedulerCancel()
 
 	backuperNode := CreateTestBackuperNode()
@@ -993,7 +995,7 @@ func Test_StartBackup_WhenBackupFails_DecrementsActiveTaskCount(t *testing.T) {
 	t.Logf("Initial active tasks: %d", initialActiveTasks)
 
 	// Start backup
-	GetBackupsScheduler().StartBackup(database.ID, false)
+	scheduler.StartBackup(database.ID, false)
 
 	// Wait for backup to fail
 	WaitForBackupCompletion(t, database.ID, 0, 10*time.Second)

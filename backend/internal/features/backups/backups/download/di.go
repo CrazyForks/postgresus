@@ -1,6 +1,9 @@
 package backups_download
 
 import (
+	"sync"
+	"sync/atomic"
+
 	"databasus-backend/internal/config"
 	cache_utils "databasus-backend/internal/util/cache"
 	"databasus-backend/internal/util/logger"
@@ -30,8 +33,10 @@ func init() {
 	}
 
 	downloadTokenBackgroundService = &DownloadTokenBackgroundService{
-		downloadTokenService,
-		logger.GetLogger(),
+		downloadTokenService: downloadTokenService,
+		logger:               logger.GetLogger(),
+		runOnce:              sync.Once{},
+		hasRun:               atomic.Bool{},
 	}
 }
 
