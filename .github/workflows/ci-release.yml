@@ -463,6 +463,7 @@ jobs:
 
       - name: Analyze commits and determine version bump
         id: version_bump
+        shell: bash
         run: |
           CURRENT_VERSION="${{ steps.current_version.outputs.current_version }}"
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
@@ -614,6 +615,7 @@ jobs:
 
       - name: Generate changelog
         id: changelog
+        shell: bash
         run: |
           NEW_VERSION="${{ needs.determine-version.outputs.new_version }}"
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
