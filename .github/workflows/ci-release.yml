@@ -483,7 +483,7 @@ jobs:
           HAS_BREAKING=false
 
           # Analyze each commit
-          while IFS= read -r commit; do
+          printf '%s\n' "$COMMITS" | while IFS= read -r commit; do
             if [[ "$commit" =~ ^FEATURE ]]; then
               HAS_FEATURE=true
               echo "Found FEATURE commit: $commit"
@@ -500,7 +500,7 @@ jobs:
               HAS_BREAKING=true
               echo "Found BREAKING CHANGE: $commit"
             fi
-          done <<< "$COMMITS"
+          done
 
           # Determine version bump
           if [ "$HAS_BREAKING" = true ]; then
@@ -633,7 +633,7 @@ jobs:
           FIXES=""
           REFACTORS=""
 
-          while IFS= read -r line; do
+          printf '%s\n' "$COMMITS" | while IFS= read -r line; do
             if [ -n "$line" ]; then
               COMMIT_MSG=$(echo "$line" | cut -d'|' -f1)
               COMMIT_HASH=$(echo "$line" | cut -d'|' -f2)
@@ -666,7 +666,7 @@ jobs:
                 fi
               fi
             fi
-          done <<< "$COMMITS"
+          done
 
           # Build changelog sections
           if [ -n "$FEATURES" ]; then
