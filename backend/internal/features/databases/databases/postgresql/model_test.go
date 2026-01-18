@@ -709,6 +709,344 @@ func Test_CreateReadOnlyUser_Supabase_UserCanReadButNotWrite(t *testing.T) {
 	assert.Contains(t, err.Error(), "permission denied")
 }
 
+func Test_CreateReadOnlyUser_WithPublicSchema_Success(t *testing.T) {
+	env := config.GetEnv()
+	cases := []struct {
+		name    string
+		version string
+		port    string
+	}{
+		{"PostgreSQL 12", "12", env.TestPostgres12Port},
+		{"PostgreSQL 13", "13", env.TestPostgres13Port},
+		{"PostgreSQL 14", "14", env.TestPostgres14Port},
+		{"PostgreSQL 15", "15", env.TestPostgres15Port},
+		{"PostgreSQL 16", "16", env.TestPostgres16Port},
+		{"PostgreSQL 17", "17", env.TestPostgres17Port},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			container := connectToPostgresContainer(t, tc.port)
+			defer container.DB.Close()
+
+			_, err := container.DB.Exec(`
+				DROP TABLE IF EXISTS public_schema_test CASCADE;
+				CREATE TABLE public_schema_test (
+					id SERIAL PRIMARY KEY,
+					data TEXT NOT NULL
+				);
+				INSERT INTO public_schema_test (data) VALUES ('test1'), ('test2');
+			`)
+			assert.NoError(t, err)
+
+			pgModel := createPostgresModel(container)
+			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+			ctx := context.Background()
+
+			username, password, err := pgModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
+			assert.NoError(t, err)
+			assert.NotEmpty(t, username)
+			assert.NotEmpty(t, password)
+			assert.True(t, strings.HasPrefix(username, "databasus-"))
+
+			readOnlyModel := &PostgresqlDatabase{
+				Version:  pgModel.Version,
+				Host:     pgModel.Host,
+				Port:     pgModel.Port,
+				Username: username,
+				Password: password,
+				Database: pgModel.Database,
+				IsHttps:  false,
+			}
+
+			isReadOnly, privileges, err := readOnlyModel.IsUserReadOnly(
+				ctx,
+				logger,
+				nil,
+				uuid.New(),
+			)
+			assert.NoError(t, err)
+			assert.True(t, isReadOnly, "User should be read-only")
+			assert.Empty(t, privileges, "Read-only user should have no write privileges")
+
+			readOnlyDSN := fmt.Sprintf(
+				"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+				container.Host,
+				container.Port,
+				username,
+				password,
+				container.Database,
+			)
+			readOnlyConn, err := sqlx.Connect("postgres", readOnlyDSN)
+			assert.NoError(t, err)
+			defer readOnlyConn.Close()
+
+			var count int
+			err = readOnlyConn.Get(&count, "SELECT COUNT(*) FROM public_schema_test")
+			assert.NoError(t, err)
+			assert.Equal(t, 2, count)
+
+			_, err = readOnlyConn.Exec(
+				"INSERT INTO public_schema_test (data) VALUES ('should-fail')",
+			)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "permission denied")
+
+			_, err = readOnlyConn.Exec("CREATE TABLE public.hack_table (id INT)")
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "permission denied")
+
+			_, err = container.DB.Exec(fmt.Sprintf(`DROP OWNED BY "%s" CASCADE`, username))
+			if err != nil {
+				t.Logf("Warning: Failed to drop owned objects: %v", err)
+			}
+			_, err = container.DB.Exec(fmt.Sprintf(`DROP USER IF EXISTS "%s"`, username))
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func Test_CreateReadOnlyUser_WithoutPublicSchema_Success(t *testing.T) {
+	env := config.GetEnv()
+	cases := []struct {
+		name    string
+		version string
+		port    string
+	}{
+		{"PostgreSQL 12", "12", env.TestPostgres12Port},
+		{"PostgreSQL 13", "13", env.TestPostgres13Port},
+		{"PostgreSQL 14", "14", env.TestPostgres14Port},
+		{"PostgreSQL 15", "15", env.TestPostgres15Port},
+		{"PostgreSQL 16", "16", env.TestPostgres16Port},
+		{"PostgreSQL 17", "17", env.TestPostgres17Port},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			container := connectToPostgresContainer(t, tc.port)
+			defer container.DB.Close()
+
+			_, err := container.DB.Exec(`
+				DROP SCHEMA IF EXISTS public CASCADE;
+				DROP SCHEMA IF EXISTS app_schema CASCADE;
+				DROP SCHEMA IF EXISTS data_schema CASCADE;
+				CREATE SCHEMA app_schema;
+				CREATE SCHEMA data_schema;
+				CREATE TABLE app_schema.users (
+					id SERIAL PRIMARY KEY,
+					username TEXT NOT NULL
+				);
+				CREATE TABLE data_schema.records (
+					id SERIAL PRIMARY KEY,
+					info TEXT NOT NULL
+				);
+				INSERT INTO app_schema.users (username) VALUES ('user1'), ('user2');
+				INSERT INTO data_schema.records (info) VALUES ('record1'), ('record2');
+			`)
+			assert.NoError(t, err)
+
+			pgModel := createPostgresModel(container)
+			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+			ctx := context.Background()
+
+			username, password, err := pgModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
+			assert.NoError(t, err, "CreateReadOnlyUser should succeed without public schema")
+			assert.NotEmpty(t, username)
+			assert.NotEmpty(t, password)
+			assert.True(t, strings.HasPrefix(username, "databasus-"))
+
+			readOnlyModel := &PostgresqlDatabase{
+				Version:  pgModel.Version,
+				Host:     pgModel.Host,
+				Port:     pgModel.Port,
+				Username: username,
+				Password: password,
+				Database: pgModel.Database,
+				IsHttps:  false,
+			}
+
+			isReadOnly, privileges, err := readOnlyModel.IsUserReadOnly(
+				ctx,
+				logger,
+				nil,
+				uuid.New(),
+			)
+			assert.NoError(t, err)
+			assert.True(t, isReadOnly, "User should be read-only")
+			assert.Empty(t, privileges, "Read-only user should have no write privileges")
+
+			readOnlyDSN := fmt.Sprintf(
+				"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+				container.Host,
+				container.Port,
+				username,
+				password,
+				container.Database,
+			)
+			readOnlyConn, err := sqlx.Connect("postgres", readOnlyDSN)
+			assert.NoError(t, err)
+			defer readOnlyConn.Close()
+
+			var userCount int
+			err = readOnlyConn.Get(&userCount, "SELECT COUNT(*) FROM app_schema.users")
+			assert.NoError(t, err)
+			assert.Equal(t, 2, userCount)
+
+			var recordCount int
+			err = readOnlyConn.Get(&recordCount, "SELECT COUNT(*) FROM data_schema.records")
+			assert.NoError(t, err)
+			assert.Equal(t, 2, recordCount)
+
+			_, err = readOnlyConn.Exec(
+				"INSERT INTO app_schema.users (username) VALUES ('should-fail')",
+			)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "permission denied")
+
+			_, err = readOnlyConn.Exec("CREATE TABLE app_schema.hack_table (id INT)")
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "permission denied")
+
+			_, err = readOnlyConn.Exec("CREATE TABLE data_schema.hack_table (id INT)")
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "permission denied")
+
+			_, err = container.DB.Exec(fmt.Sprintf(`DROP OWNED BY "%s" CASCADE`, username))
+			if err != nil {
+				t.Logf("Warning: Failed to drop owned objects: %v", err)
+			}
+			_, err = container.DB.Exec(fmt.Sprintf(`DROP USER IF EXISTS "%s"`, username))
+			assert.NoError(t, err)
+
+			_, err = container.DB.Exec(`
+				DROP SCHEMA IF EXISTS app_schema CASCADE;
+				DROP SCHEMA IF EXISTS data_schema CASCADE;
+				CREATE SCHEMA IF NOT EXISTS public;
+			`)
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func Test_CreateReadOnlyUser_PublicSchemaExistsButNoPermissions_ReturnsError(t *testing.T) {
+	env := config.GetEnv()
+	cases := []struct {
+		name    string
+		version string
+		port    string
+	}{
+		{"PostgreSQL 12", "12", env.TestPostgres12Port},
+		{"PostgreSQL 13", "13", env.TestPostgres13Port},
+		{"PostgreSQL 14", "14", env.TestPostgres14Port},
+		{"PostgreSQL 15", "15", env.TestPostgres15Port},
+		{"PostgreSQL 16", "16", env.TestPostgres16Port},
+		{"PostgreSQL 17", "17", env.TestPostgres17Port},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			container := connectToPostgresContainer(t, tc.port)
+			defer container.DB.Close()
+
+			limitedAdminUsername := fmt.Sprintf("limited_admin_%s", uuid.New().String()[:8])
+			limitedAdminPassword := "limited_password_123"
+
+			_, err := container.DB.Exec(`
+				CREATE SCHEMA IF NOT EXISTS public;
+				DROP TABLE IF EXISTS public.permission_test_table CASCADE;
+				CREATE TABLE public.permission_test_table (
+					id SERIAL PRIMARY KEY,
+					data TEXT NOT NULL
+				);
+				INSERT INTO public.permission_test_table (data) VALUES ('test1');
+			`)
+			assert.NoError(t, err)
+
+			_, err = container.DB.Exec(`GRANT CREATE ON SCHEMA public TO PUBLIC`)
+			assert.NoError(t, err)
+
+			_, err = container.DB.Exec(fmt.Sprintf(
+				`CREATE USER "%s" WITH PASSWORD '%s' LOGIN CREATEROLE`,
+				limitedAdminUsername,
+				limitedAdminPassword,
+			))
+			assert.NoError(t, err)
+
+			_, err = container.DB.Exec(fmt.Sprintf(
+				`GRANT CONNECT ON DATABASE "%s" TO "%s"`,
+				container.Database,
+				limitedAdminUsername,
+			))
+			assert.NoError(t, err)
+
+			defer func() {
+				_, _ = container.DB.Exec(
+					fmt.Sprintf(`DROP OWNED BY "%s" CASCADE`, limitedAdminUsername),
+				)
+				_, _ = container.DB.Exec(
+					fmt.Sprintf(`DROP USER IF EXISTS "%s"`, limitedAdminUsername),
+				)
+				_, _ = container.DB.Exec(`REVOKE CREATE ON SCHEMA public FROM PUBLIC`)
+			}()
+
+			limitedAdminDSN := fmt.Sprintf(
+				"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+				container.Host,
+				container.Port,
+				limitedAdminUsername,
+				limitedAdminPassword,
+				container.Database,
+			)
+			limitedAdminConn, err := sqlx.Connect("postgres", limitedAdminDSN)
+			assert.NoError(t, err)
+			defer limitedAdminConn.Close()
+
+			pgModel := &PostgresqlDatabase{
+				Version:  tools.GetPostgresqlVersionEnum(tc.version),
+				Host:     container.Host,
+				Port:     container.Port,
+				Username: limitedAdminUsername,
+				Password: limitedAdminPassword,
+				Database: &container.Database,
+				IsHttps:  false,
+			}
+
+			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+			ctx := context.Background()
+
+			username, password, err := pgModel.CreateReadOnlyUser(ctx, logger, nil, uuid.New())
+			assert.Error(
+				t,
+				err,
+				"CreateReadOnlyUser should fail when admin lacks permissions to secure public schema",
+			)
+			if err != nil {
+				errorMsg := err.Error()
+				hasExpectedError := strings.Contains(
+					errorMsg,
+					"failed to revoke CREATE from PUBLIC on existing public schema",
+				) ||
+					strings.Contains(errorMsg, "permission denied for schema public") ||
+					strings.Contains(errorMsg, "failed to grant")
+				assert.True(
+					t,
+					hasExpectedError,
+					"Error should indicate permission issues with public schema, got: %s",
+					errorMsg,
+				)
+			}
+			assert.Empty(t, username)
+			assert.Empty(t, password)
+		})
+	}
+}
+
 func Test_Validate_WhenLocalhostAndDatabasus_ReturnsError(t *testing.T) {
 	testCases := []struct {
 		name     string
