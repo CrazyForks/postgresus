@@ -285,30 +285,30 @@ func (f *FTPStorage) ensureDirectory(conn *ftp.ServerConn, path string) error {
 	}
 
 	parts := strings.Split(path, "/")
-	currentPath := ""
+
+	currentDir, err := conn.CurrentDir()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+	defer func() {
+		_ = conn.ChangeDir(currentDir)
+	}()
 
 	for _, part := range parts {
 		if part == "" || part == "." {
 			continue
 		}
 
-		if currentPath == "" {
-			currentPath = part
-		} else {
-			currentPath = currentPath + "/" + part
-		}
-
-		err := conn.ChangeDir(currentPath)
+		err := conn.ChangeDir(part)
 		if err != nil {
-			err = conn.MakeDir(currentPath)
+			err = conn.MakeDir(part)
 			if err != nil {
-				return fmt.Errorf("failed to create directory '%s': %w", currentPath, err)
+				return fmt.Errorf("failed to create directory '%s': %w", part, err)
 			}
-		}
-
-		err = conn.ChangeDirToParent()
-		if err != nil {
-			return fmt.Errorf("failed to change to parent directory: %w", err)
+			err = conn.ChangeDir(part)
+			if err != nil {
+				return fmt.Errorf("failed to change into directory '%s': %w", part, err)
+			}
 		}
 	}
 
