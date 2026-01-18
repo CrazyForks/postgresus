@@ -599,6 +599,10 @@ func Test_CreateReadOnlyUser_DatabaseNameWithDash_Success(t *testing.T) {
 }
 
 func Test_CreateReadOnlyUser_Supabase_UserCanReadButNotWrite(t *testing.T) {
+	if config.GetEnv().IsSkipExternalResourcesTests {
+		t.Skip("Skipping Supabase test: IS_SKIP_EXTERNAL_RESOURCES_TESTS is true")
+	}
+
 	env := config.GetEnv()
 
 	if env.TestSupabaseHost == "" {

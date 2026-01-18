@@ -185,7 +185,9 @@ acl = private`, s3Container.accessKey, s3Container.secretKey, s3Container.endpoi
 
 	// Add Google Drive storage test only if environment variables are available
 	env := config.GetEnv()
-	if env.TestGoogleDriveClientID != "" && env.TestGoogleDriveClientSecret != "" &&
+	if env.IsSkipExternalResourcesTests {
+		t.Log("Skipping Google Drive storage test: IS_SKIP_EXTERNAL_RESOURCES_TESTS=true")
+	} else if env.TestGoogleDriveClientID != "" && env.TestGoogleDriveClientSecret != "" &&
 		env.TestGoogleDriveTokenJSON != "" {
 		testCases = append(testCases, struct {
 			name    string

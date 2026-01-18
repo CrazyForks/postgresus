@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"databasus-backend/internal/config"
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	azure_blob_storage "databasus-backend/internal/features/storages/models/azure_blob"
 	ftp_storage "databasus-backend/internal/features/storages/models/ftp"
@@ -902,6 +903,12 @@ func Test_StorageSensitiveDataLifecycle_AllTypes(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			// Skip Google Drive tests if external resources tests are disabled
+			if tc.storageType == StorageTypeGoogleDrive &&
+				config.GetEnv().IsSkipExternalResourcesTests {
+				t.Skip("Skipping Google Drive storage test: IS_SKIP_EXTERNAL_RESOURCES_TESTS=true")
+			}
+
 			owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
 			router := createRouter()
 			workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)

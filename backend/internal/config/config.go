@@ -32,6 +32,7 @@ type EnvVariables struct {
 	TestLocalhost string `env:"TEST_LOCALHOST"`
 
 	ShowDbInstallationVerificationLogs bool `env:"SHOW_DB_INSTALLATION_VERIFICATION_LOGS"`
+	IsSkipExternalResourcesTests       bool `env:"IS_SKIP_EXTERNAL_RESOURCES_TESTS"`
 
 	IsManyNodesMode          bool `env:"IS_MANY_NODES_MODE"`
 	IsPrimaryNode            bool `env:"IS_PRIMARY_NODE"`
@@ -174,6 +175,11 @@ func loadEnvVariables() {
 	// Set default value for ShowDbInstallationVerificationLogs if not defined
 	if os.Getenv("SHOW_DB_INSTALLATION_VERIFICATION_LOGS") == "" {
 		env.ShowDbInstallationVerificationLogs = true
+	}
+
+	// Set default value for IsSkipExternalTests if not defined
+	if os.Getenv("IS_SKIP_EXTERNAL_RESOURCES_TESTS") == "" {
+		env.IsSkipExternalResourcesTests = false
 	}
 
 	for _, arg := range os.Args {
