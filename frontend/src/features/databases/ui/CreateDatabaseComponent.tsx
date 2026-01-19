@@ -137,9 +137,11 @@ export const CreateDatabaseComponent = ({ workspaceId, onCreated, onClose }: Pro
         database={database}
         onReadOnlyUserUpdated={(database) => {
           setDatabase({ ...database });
+          setStep('backup-config');
         }}
         onGoBack={() => setStep('db-settings')}
-        onContinue={() => setStep('backup-config')}
+        onSkipped={() => setStep('backup-config')}
+        onAlreadyExists={() => setStep('backup-config')}
       />
     );
   }

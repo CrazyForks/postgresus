@@ -1,4 +1,4 @@
-import { InfoCircleOutlined } from '@ant-design/icons';
+import { DownOutlined, InfoCircleOutlined, UpOutlined } from '@ant-design/icons';
 import {
   Button,
   Checkbox,
@@ -79,6 +79,9 @@ export const EditBackupConfigComponent = ({
 
   const [isShowWarn, setIsShowWarn] = useState(false);
 
+  const hasAdvancedValues = !!backupConfig?.isRetryIfFailed;
+  const [isShowAdvanced, setShowAdvanced] = useState(hasAdvancedValues);
+
   const timeFormat = useMemo(() => {
     const is12 = getIs12Hour();
     return { use12Hours: is12, format: is12 ? 'h:mm A' : 'HH:mm' };
@@ -155,7 +158,7 @@ export const EditBackupConfigComponent = ({
         },
         storage: undefined,
         storePeriod: Period.THREE_MONTH,
-        sendNotificationsOn: [],
+        sendNotificationsOn: [BackupNotificationType.BackupFailed],
         isRetryIfFailed: true,
         maxFailedTriesCount: 3,
         encryption: BackupEncryption.ENCRYPTED,
@@ -363,79 +366,6 @@ export const EditBackupConfigComponent = ({
               </div>
             )}
 
-          <div className="mt-4 mb-1 flex w-full flex-col items-start sm:flex-row sm:items-center">
-            <div className="mb-1 min-w-[150px] sm:mb-0">Retry backup if failed</div>
-            <div className="flex items-center">
-              <Switch
-                size="small"
-                checked={backupConfig.isRetryIfFailed}
-                onChange={(checked) => updateBackupConfig({ isRetryIfFailed: checked })}
-              />
-
-              <Tooltip
-                className="cursor-pointer"
-                title="Automatically retry failed backups. Backups can fail due to network failures, storage issues or temporary database unavailability."
-              >
-                <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
-              </Tooltip>
-            </div>
-          </div>
-
-          {backupConfig.isRetryIfFailed && (
-            <div className="mb-1 flex w-full flex-col items-start sm:flex-row sm:items-center">
-              <div className="mb-1 min-w-[150px] sm:mb-0">Max failed tries count</div>
-              <div className="flex items-center">
-                <InputNumber
-                  min={1}
-                  max={10}
-                  value={backupConfig.maxFailedTriesCount}
-                  onChange={(value) => updateBackupConfig({ maxFailedTriesCount: value || 1 })}
-                  size="small"
-                  className="w-full max-w-[200px] grow"
-                />
-
-                <Tooltip
-                  className="cursor-pointer"
-                  title="Maximum number of retry attempts for failed backups. You will receive a notification when all tries have failed."
-                >
-                  <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
-                </Tooltip>
-              </div>
-            </div>
-          )}
-
-          <div className="mb-1 flex w-full flex-col items-start sm:flex-row sm:items-center">
-            <div className="mb-1 min-w-[150px] sm:mb-0">Store period</div>
-            <div className="flex items-center">
-              <Select
-                value={backupConfig.storePeriod}
-                onChange={(v) => updateBackupConfig({ storePeriod: v })}
-                size="small"
-                className="w-full max-w-[200px] grow"
-                options={[
-                  { label: '1 day', value: Period.DAY },
-                  { label: '1 week', value: Period.WEEK },
-                  { label: '1 month', value: Period.MONTH },
-                  { label: '3 months', value: Period.THREE_MONTH },
-                  { label: '6 months', value: Period.SIX_MONTH },
-                  { label: '1 year', value: Period.YEAR },
-                  { label: '2 years', value: Period.TWO_YEARS },
-                  { label: '3 years', value: Period.THREE_YEARS },
-                  { label: '4 years', value: Period.FOUR_YEARS },
-                  { label: '5 years', value: Period.FIVE_YEARS },
-                  { label: 'Forever', value: Period.FOREVER },
-                ]}
-              />
-
-              <Tooltip
-                className="cursor-pointer"
-                title="How long to keep the backups? Make sure you have enough storage space."
-              >
-                <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
-              </Tooltip>
-            </div>
-          </div>
-
           <div className="mb-3" />
         </>
       )}
@@ -485,7 +415,7 @@ export const EditBackupConfigComponent = ({
             value={backupConfig.encryption}
             onChange={(v) => updateBackupConfig({ encryption: v })}
             size="small"
-            className="w-full max-w-[200px] grow"
+            className="w-[200px]"
             options={[
               { label: 'None', value: BackupEncryption.NONE },
               { label: 'Encrypt backup files', value: BackupEncryption.ENCRYPTED },
@@ -495,6 +425,38 @@ export const EditBackupConfigComponent = ({
           <Tooltip
             className="cursor-pointer"
             title="If backup is encrypted, backup files in your storage (S3, local, etc.) cannot be used directly. You can restore backups through Databasus or download them unencrypted via the 'Download' button."
+          >
+            <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
+          </Tooltip>
+        </div>
+      </div>
+
+      <div className="mb-1 flex w-full flex-col items-start sm:flex-row sm:items-center">
+        <div className="mb-1 min-w-[150px] sm:mb-0">Store period</div>
+        <div className="flex items-center">
+          <Select
+            value={backupConfig.storePeriod}
+            onChange={(v) => updateBackupConfig({ storePeriod: v })}
+            size="small"
+            className="w-[200px]"
+            options={[
+              { label: '1 day', value: Period.DAY },
+              { label: '1 week', value: Period.WEEK },
+              { label: '1 month', value: Period.MONTH },
+              { label: '3 months', value: Period.THREE_MONTH },
+              { label: '6 months', value: Period.SIX_MONTH },
+              { label: '1 year', value: Period.YEAR },
+              { label: '2 years', value: Period.TWO_YEARS },
+              { label: '3 years', value: Period.THREE_YEARS },
+              { label: '4 years', value: Period.FOUR_YEARS },
+              { label: '5 years', value: Period.FIVE_YEARS },
+              { label: 'Forever', value: Period.FOREVER },
+            ]}
+          />
+
+          <Tooltip
+            className="cursor-pointer"
+            title="How long to keep the backups? Make sure you have enough storage space."
           >
             <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
           </Tooltip>
@@ -546,9 +508,69 @@ export const EditBackupConfigComponent = ({
         </>
       )}
 
+      <div className="mt-4 mb-1 flex items-center">
+        <div
+          className="flex cursor-pointer items-center text-sm text-blue-600 hover:text-blue-800"
+          onClick={() => setShowAdvanced(!isShowAdvanced)}
+        >
+          <span className="mr-2">Advanced settings</span>
+
+          {isShowAdvanced ? (
+            <UpOutlined style={{ fontSize: '12px' }} />
+          ) : (
+            <DownOutlined style={{ fontSize: '12px' }} />
+          )}
+        </div>
+      </div>
+
+      {isShowAdvanced && backupConfig.isBackupsEnabled && (
+        <>
+          <div className="mb-1 flex w-full flex-col items-start sm:flex-row sm:items-center">
+            <div className="mb-1 min-w-[150px] sm:mb-0">Retry backup if failed</div>
+            <div className="flex items-center">
+              <Switch
+                size="small"
+                checked={backupConfig.isRetryIfFailed}
+                onChange={(checked) => updateBackupConfig({ isRetryIfFailed: checked })}
+              />
+
+              <Tooltip
+                className="cursor-pointer"
+                title="Automatically retry failed backups. Backups can fail due to network failures, storage issues or temporary database unavailability."
+              >
+                <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
+              </Tooltip>
+            </div>
+          </div>
+
+          {backupConfig.isRetryIfFailed && (
+            <div className="mb-1 flex w-full flex-col items-start sm:flex-row sm:items-center">
+              <div className="mb-1 min-w-[150px] sm:mb-0">Max failed tries count</div>
+              <div className="flex items-center">
+                <InputNumber
+                  min={1}
+                  max={10}
+                  value={backupConfig.maxFailedTriesCount}
+                  onChange={(value) => updateBackupConfig({ maxFailedTriesCount: value || 1 })}
+                  size="small"
+                  className="w-full max-w-[200px] grow"
+                />
+
+                <Tooltip
+                  className="cursor-pointer"
+                  title="Maximum number of retry attempts for failed backups. You will receive a notification when all tries have failed."
+                >
+                  <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
+                </Tooltip>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
       <div className="mt-5 flex">
         {isShowBackButton && (
-          <Button className="mr-1" onClick={onBack}>
+          <Button className="mr-1" type="primary" ghost onClick={onBack}>
             Back
           </Button>
         )}
