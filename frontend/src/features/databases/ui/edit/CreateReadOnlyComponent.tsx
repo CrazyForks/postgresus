@@ -8,7 +8,8 @@ interface Props {
   onReadOnlyUserUpdated: (database: Database) => void;
 
   onGoBack: () => void;
-  onContinue: () => void;
+  onSkipped: () => void;
+  onAlreadyExists: () => void;
 }
 
 const PRIVILEGES_TRUNCATE_LENGTH = 50;
@@ -17,7 +18,8 @@ export const CreateReadOnlyComponent = ({
   database,
   onReadOnlyUserUpdated,
   onGoBack,
-  onContinue,
+  onSkipped,
+  onAlreadyExists,
 }: Props) => {
   const [isCheckingReadOnlyUser, setIsCheckingReadOnlyUser] = useState(false);
   const [isCreatingReadOnlyUser, setIsCreatingReadOnlyUser] = useState(false);
@@ -87,7 +89,6 @@ export const CreateReadOnlyComponent = ({
       }
 
       onReadOnlyUserUpdated(database);
-      onContinue();
     } catch (e) {
       alert((e as Error).message);
     }
@@ -101,7 +102,7 @@ export const CreateReadOnlyComponent = ({
 
   const handleSkipConfirmed = () => {
     setShowSkipConfirmation(false);
-    onContinue();
+    onSkipped();
   };
 
   useEffect(() => {
@@ -110,7 +111,7 @@ export const CreateReadOnlyComponent = ({
 
       const isReadOnly = await checkReadOnlyUser();
       if (isReadOnly) {
-        onContinue();
+        onAlreadyExists();
       }
 
       setIsCheckingReadOnlyUser(false);
@@ -228,7 +229,7 @@ export const CreateReadOnlyComponent = ({
         </div>
 
         <div className="flex justify-end">
-          <Button className="mr-2" danger onClick={handleSkipConfirmed}>
+          <Button className="mr-2" danger ghost onClick={handleSkipConfirmed}>
             Yes, I accept risks
           </Button>
 

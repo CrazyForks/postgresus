@@ -6,6 +6,7 @@ import (
 
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/backups/backups"
+	"databasus-backend/internal/features/backups/backups/backuping"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/disk"
@@ -51,6 +52,7 @@ func SetupDependencies() {
 
 	setupOnce.Do(func() {
 		backups.GetBackupService().AddBackupRemoveListener(restoreService)
+		backuping.GetBackupCleaner().AddBackupRemoveListener(restoreService)
 
 		isSetup.Store(true)
 	})

@@ -46,6 +46,7 @@ type BackupService struct {
 	taskCancelManager      *task_cancellation.TaskCancelManager
 	downloadTokenService   *backups_download.DownloadTokenService
 	backupSchedulerService *backuping.BackupsScheduler
+	backupCleaner          *backuping.BackupCleaner
 }
 
 func (s *BackupService) AddBackupRemoveListener(listener backups_core.BackupRemoveListener) {
@@ -189,7 +190,7 @@ func (s *BackupService) DeleteBackup(
 		database.WorkspaceID,
 	)
 
-	return s.deleteBackup(backup)
+	return s.backupCleaner.DeleteBackup(backup)
 }
 
 func (s *BackupService) GetBackup(backupID uuid.UUID) (*backups_core.Backup, error) {
@@ -292,29 +293,6 @@ func (s *BackupService) GetBackupFile(
 	return reader, backup, database, nil
 }
 
-func (s *BackupService) deleteBackup(backup *backups_core.Backup) error {
-	for _, listener := range s.backupRemoveListeners {
-		if err := listener.OnBeforeBackupRemove(backup); err != nil {
-			return err
-		}
-	}
-
-	storage, err := s.storageService.GetStorageByID(backup.StorageID)
-	if err != nil {
-		return err
-	}
-
-	err = storage.DeleteFile(s.fieldEncryptor, backup.ID)
-	if err != nil {
-		// we do not return error here, because sometimes clean up performed
-		// before unavailable storage removal or change - therefore we should
-		// proceed even in case of error
-		s.logger.Error("Failed to delete backup file", "error", err)
-	}
-
-	return s.backupRepository.DeleteByID(backup.ID)
-}
-
 func (s *BackupService) deleteDbBackups(databaseID uuid.UUID) error {
 	dbBackupsInProgress, err := s.backupRepository.FindByDatabaseIdAndStatus(
 		databaseID,
@@ -336,7 +314,7 @@ func (s *BackupService) deleteDbBackups(databaseID uuid.UUID) error {
 	}
 
 	for _, dbBackup := range dbBackups {
-		err := s.deleteBackup(dbBackup)
+		err := s.backupCleaner.DeleteBackup(dbBackup)
 		if err != nil {
 			return err
 		}

@@ -1,4 +1,8 @@
-import { type Database, DatabaseType } from '../../../../entity/databases';
+import { Modal } from 'antd';
+import { useState } from 'react';
+
+import { type Database, DatabaseType, databaseApi } from '../../../../entity/databases';
+import { CreateReadOnlyComponent } from './CreateReadOnlyComponent';
 import { EditMariaDbSpecificDataComponent } from './EditMariaDbSpecificDataComponent';
 import { EditMongoDbSpecificDataComponent } from './EditMongoDbSpecificDataComponent';
 import { EditMySqlSpecificDataComponent } from './EditMySqlSpecificDataComponent';
@@ -36,19 +40,84 @@ export const EditDatabaseSpecificDataComponent = ({
   isShowDbName = true,
   isRestoreMode = false,
 }: Props) => {
+  const [isShowReadOnlyDialog, setIsShowReadOnlyDialog] = useState(false);
+  const [editingDatabase, setEditingDatabase] = useState<Database>(database);
+
+  const saveDb = async (databaseToSave: Database) => {
+    setEditingDatabase(databaseToSave);
+
+    if (!isSaveToApi) {
+      onSaved(databaseToSave);
+      return;
+    }
+
+    try {
+      const result = await databaseApi.isUserReadOnly(databaseToSave);
+
+      if (result.isReadOnly) {
+        onSaved(databaseToSave);
+      } else {
+        setIsShowReadOnlyDialog(true);
+      }
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  };
+
+  const onReadOnlyUserCreated = (updatedDatabase: Database) => {
+    setEditingDatabase(updatedDatabase);
+    setIsShowReadOnlyDialog(false);
+  };
+
+  const skipReadOnlyUser = () => {
+    setIsShowReadOnlyDialog(false);
+    onSaved(editingDatabase);
+  };
+
+  if (isShowReadOnlyDialog) {
+    return (
+      <Modal
+        title="Create read-only user"
+        footer={<div />}
+        open={isShowReadOnlyDialog}
+        onCancel={() => setIsShowReadOnlyDialog(false)}
+        maskClosable={false}
+        width={450}
+      >
+        <CreateReadOnlyComponent
+          database={editingDatabase}
+          onReadOnlyUserUpdated={(db) => {
+            console.log('onReadOnlyUserUpdated', db);
+            onReadOnlyUserCreated(db);
+          }}
+          onGoBack={() => {
+            setIsShowReadOnlyDialog(false);
+          }}
+          onSkipped={() => {
+            skipReadOnlyUser();
+          }}
+          onAlreadyExists={() => {
+            console.log('onAlreadyExists');
+            onSaved(editingDatabase);
+          }}
+        />
+      </Modal>
+    );
+  }
+
   const commonProps = {
-    database,
+    database: editingDatabase,
     isShowCancelButton,
     onCancel,
     isShowBackButton,
     onBack,
     saveButtonText,
     isSaveToApi,
-    onSaved,
+    onSaved: saveDb,
     isShowDbName,
   };
 
-  switch (database.type) {
+  switch (editingDatabase.type) {
     case DatabaseType.POSTGRES:
       return <EditPostgreSqlSpecificDataComponent {...commonProps} isRestoreMode={isRestoreMode} />;
     case DatabaseType.MYSQL:

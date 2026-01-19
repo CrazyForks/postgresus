@@ -15,6 +15,7 @@ type Backup struct {
 
 	Status      BackupStatus `json:"status"      gorm:"column:status;not null"`
 	FailMessage *string      `json:"failMessage" gorm:"column:fail_message"`
+	IsSkipRetry bool         `json:"isSkipRetry" gorm:"column:is_skip_retry;type:boolean;not null"`
 
 	BackupSizeMb float64 `json:"backupSizeMb" gorm:"column:backup_size_mb;default:0"`
 

@@ -1,13 +1,10 @@
 package backuping
 
 import (
-	"context"
-	"errors"
 	"strings"
 	"testing"
 	"time"
 
-	common "databasus-backend/internal/features/backups/backups/common"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
 	"databasus-backend/internal/features/databases"
@@ -18,7 +15,6 @@ import (
 	workspaces_testing "databasus-backend/internal/features/workspaces/testing"
 	cache_utils "databasus-backend/internal/util/cache"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -158,35 +154,120 @@ func Test_BackupExecuted_NotificationSent(t *testing.T) {
 	})
 }
 
-type CreateFailedBackupUsecase struct {
-}
+func Test_BackupSizeLimits(t *testing.T) {
+	cache_utils.ClearAllCache()
+	user := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+	router := CreateTestRouter()
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", user, router)
+	storage := storages.CreateTestStorage(workspace.ID)
+	notifier := notifiers.CreateTestNotifier(workspace.ID)
+	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
 
-func (uc *CreateFailedBackupUsecase) Execute(
-	ctx context.Context,
-	backupID uuid.UUID,
-	backupConfig *backups_config.BackupConfig,
-	database *databases.Database,
-	storage *storages.Storage,
-	backupProgressListener func(completedMBs float64),
-) (*common.BackupMetadata, error) {
-	backupProgressListener(10)
-	return nil, errors.New("backup failed")
-}
+	defer func() {
+		// cleanup backups first
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
 
-type CreateSuccessBackupUsecase struct{}
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond) // Wait for cascading deletes
+		notifiers.RemoveTestNotifier(notifier)
+		storages.RemoveTestStorage(storage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
 
-func (uc *CreateSuccessBackupUsecase) Execute(
-	ctx context.Context,
-	backupID uuid.UUID,
-	backupConfig *backups_config.BackupConfig,
-	database *databases.Database,
-	storage *storages.Storage,
-	backupProgressListener func(completedMBs float64),
-) (*common.BackupMetadata, error) {
-	backupProgressListener(10)
-	return &common.BackupMetadata{
-		EncryptionSalt: nil,
-		EncryptionIV:   nil,
-		Encryption:     backups_config.BackupEncryptionNone,
-	}, nil
+	t.Run("UnlimitedSize_MaxBackupSizeMBIsZero_BackupCompletes", func(t *testing.T) {
+		// Enable backups with unlimited size (0)
+		backupConfig := backups_config.EnableBackupsForTestDatabase(database.ID, storage)
+		backupConfig.MaxBackupSizeMB = 0 // unlimited
+		backupConfig, err := backups_config.GetBackupConfigService().SaveBackupConfig(backupConfig)
+		assert.NoError(t, err)
+
+		backuperNode := CreateTestBackuperNode()
+		backuperNode.createBackupUseCase = &CreateLargeBackupUsecase{}
+
+		// Create a backup record
+		backup := &backups_core.Backup{
+			DatabaseID: database.ID,
+			StorageID:  storage.ID,
+			Status:     backups_core.BackupStatusInProgress,
+			CreatedAt:  time.Now().UTC(),
+		}
+		err = backupRepository.Save(backup)
+		assert.NoError(t, err)
+
+		backuperNode.MakeBackup(backup.ID, false)
+
+		// Verify backup completed successfully even with large size
+		updatedBackup, err := backupRepository.FindByID(backup.ID)
+		assert.NoError(t, err)
+		assert.Equal(t, backups_core.BackupStatusCompleted, updatedBackup.Status)
+		assert.Equal(t, float64(10000), updatedBackup.BackupSizeMb)
+		assert.Nil(t, updatedBackup.FailMessage)
+	})
+
+	t.Run("SizeExceeded_BackupFailedWithIsSkipRetry", func(t *testing.T) {
+		// Enable backups with 5 MB limit
+		backupConfig := backups_config.EnableBackupsForTestDatabase(database.ID, storage)
+		backupConfig.MaxBackupSizeMB = 5
+		backupConfig, err := backups_config.GetBackupConfigService().SaveBackupConfig(backupConfig)
+		assert.NoError(t, err)
+
+		backuperNode := CreateTestBackuperNode()
+		backuperNode.createBackupUseCase = &CreateProgressiveBackupUsecase{}
+
+		// Create a backup record
+		backup := &backups_core.Backup{
+			DatabaseID: database.ID,
+			StorageID:  storage.ID,
+			Status:     backups_core.BackupStatusInProgress,
+			CreatedAt:  time.Now().UTC(),
+		}
+		err = backupRepository.Save(backup)
+		assert.NoError(t, err)
+
+		backuperNode.MakeBackup(backup.ID, false)
+
+		// Verify backup was marked as failed with IsSkipRetry=true
+		updatedBackup, err := backupRepository.FindByID(backup.ID)
+		assert.NoError(t, err)
+		assert.Equal(t, backups_core.BackupStatusFailed, updatedBackup.Status)
+		assert.True(t, updatedBackup.IsSkipRetry)
+		assert.NotNil(t, updatedBackup.FailMessage)
+		assert.Contains(t, *updatedBackup.FailMessage, "exceeded maximum allowed size")
+		assert.Contains(t, *updatedBackup.FailMessage, "10.00 MB")
+		assert.Contains(t, *updatedBackup.FailMessage, "5 MB")
+		assert.Greater(t, updatedBackup.BackupSizeMb, float64(5))
+	})
+
+	t.Run("SizeWithinLimit_BackupCompletes", func(t *testing.T) {
+		// Enable backups with 100 MB limit
+		backupConfig := backups_config.EnableBackupsForTestDatabase(database.ID, storage)
+		backupConfig.MaxBackupSizeMB = 100
+		backupConfig, err := backups_config.GetBackupConfigService().SaveBackupConfig(backupConfig)
+		assert.NoError(t, err)
+
+		backuperNode := CreateTestBackuperNode()
+		backuperNode.createBackupUseCase = &CreateMediumBackupUsecase{}
+
+		// Create a backup record
+		backup := &backups_core.Backup{
+			DatabaseID: database.ID,
+			StorageID:  storage.ID,
+			Status:     backups_core.BackupStatusInProgress,
+			CreatedAt:  time.Now().UTC(),
+		}
+		err = backupRepository.Save(backup)
+		assert.NoError(t, err)
+
+		backuperNode.MakeBackup(backup.ID, false)
+
+		// Verify backup completed successfully
+		updatedBackup, err := backupRepository.FindByID(backup.ID)
+		assert.NoError(t, err)
+		assert.Equal(t, backups_core.BackupStatusCompleted, updatedBackup.Status)
+		assert.Equal(t, float64(50), updatedBackup.BackupSizeMb)
+		assert.Nil(t, updatedBackup.FailMessage)
+	})
 }

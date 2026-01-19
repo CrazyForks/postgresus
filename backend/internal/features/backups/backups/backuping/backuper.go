@@ -70,16 +70,18 @@ func (n *BackuperNode) Run(ctx context.Context) {
 		}
 
 		backupHandler := func(backupID uuid.UUID, isCallNotifier bool) {
-			n.MakeBackup(backupID, isCallNotifier)
-			if err := n.backupNodesRegistry.PublishBackupCompletion(n.nodeID, backupID); err != nil {
-				n.logger.Error(
-					"Failed to publish backup completion",
-					"error",
-					err,
-					"backupID",
-					backupID,
-				)
-			}
+			go func() {
+				n.MakeBackup(backupID, isCallNotifier)
+				if err := n.backupNodesRegistry.PublishBackupCompletion(n.nodeID, backupID); err != nil {
+					n.logger.Error(
+						"Failed to publish backup completion",
+						"error",
+						err,
+						"backupID",
+						backupID,
+					)
+				}
+			}()
 		}
 
 		err := n.backupNodesRegistry.SubscribeNodeForBackupsAssignment(n.nodeID, backupHandler)
@@ -157,20 +159,40 @@ func (n *BackuperNode) MakeBackup(backupID uuid.UUID, isCallNotifier bool) {
 
 	start := time.Now().UTC()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	n.backupCancelManager.RegisterTask(backup.ID, cancel)
+	defer n.backupCancelManager.UnregisterTask(backup.ID)
+
 	backupProgressListener := func(
 		completedMBs float64,
 	) {
 		backup.BackupSizeMb = completedMBs
 		backup.BackupDurationMs = time.Since(start).Milliseconds()
 
+		// Check size limit (0 = unlimited)
+		if backupConfig.MaxBackupSizeMB > 0 &&
+			completedMBs > float64(backupConfig.MaxBackupSizeMB) {
+			errMsg := fmt.Sprintf(
+				"backup size (%.2f MB) exceeded maximum allowed size (%d MB)",
+				completedMBs,
+				backupConfig.MaxBackupSizeMB,
+			)
+
+			backup.Status = backups_core.BackupStatusFailed
+			backup.IsSkipRetry = true
+			backup.FailMessage = &errMsg
+			if err := n.backupRepository.Save(backup); err != nil {
+				n.logger.Error("Failed to save backup with size exceeded error", "error", err)
+			}
+			cancel() // Cancel the backup context
+
+			return
+		}
+
 		if err := n.backupRepository.Save(backup); err != nil {
 			n.logger.Error("Failed to update backup progress", "error", err)
 		}
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	n.backupCancelManager.RegisterTask(backup.ID, cancel)
-	defer n.backupCancelManager.UnregisterTask(backup.ID)
 
 	backupMetadata, err := n.createBackupUseCase.Execute(
 		ctx,
@@ -181,6 +203,29 @@ func (n *BackuperNode) MakeBackup(backupID uuid.UUID, isCallNotifier bool) {
 		backupProgressListener,
 	)
 	if err != nil {
+		// Check if backup was already marked as failed by progress listener (e.g., size limit exceeded)
+		// If so, skip error handling to avoid overwriting the status
+		currentBackup, fetchErr := n.backupRepository.FindByID(backup.ID)
+		if fetchErr == nil && currentBackup.Status == backups_core.BackupStatusFailed {
+			n.logger.Warn(
+				"Backup already marked as failed by progress listener, skipping error handling",
+				"backupId",
+				backup.ID,
+				"failMessage",
+				*currentBackup.FailMessage,
+			)
+
+			// Still call notification for size limit failures
+			n.SendBackupNotification(
+				backupConfig,
+				currentBackup,
+				backups_config.NotificationBackupFailed,
+				currentBackup.FailMessage,
+			)
+
+			return
+		}
+
 		errMsg := err.Error()
 
 		// Log detailed error information for debugging

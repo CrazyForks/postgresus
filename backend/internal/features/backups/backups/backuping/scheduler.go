@@ -13,10 +13,7 @@ import (
 	"databasus-backend/internal/config"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
 	backups_config "databasus-backend/internal/features/backups/config"
-	"databasus-backend/internal/features/storages"
 	task_cancellation "databasus-backend/internal/features/tasks/cancellation"
-	"databasus-backend/internal/util/encryption"
-	"databasus-backend/internal/util/period"
 )
 
 const (
@@ -28,7 +25,6 @@ const (
 type BackupsScheduler struct {
 	backupRepository    *backups_core.BackupRepository
 	backupConfigService *backups_config.BackupConfigService
-	storageService      *storages.StorageService
 	taskCancelManager   *task_cancellation.TaskCancelManager
 	backupNodesRegistry *BackupNodesRegistry
 
@@ -84,10 +80,6 @@ func (s *BackupsScheduler) Run(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := s.cleanOldBackups(); err != nil {
-					s.logger.Error("Failed to clean old backups", "error", err)
-				}
-
 				if err := s.checkDeadNodesAndFailBackups(); err != nil {
 					s.logger.Error("Failed to check dead nodes and fail backups", "error", err)
 				}
@@ -163,6 +155,33 @@ func (s *BackupsScheduler) StartBackup(databaseID uuid.UUID, isCallNotifier bool
 
 	if backupConfig.StorageID == nil {
 		s.logger.Error("Backup config storage ID is nil", "databaseId", databaseID)
+		return
+	}
+
+	// Check for existing in-progress backups
+	inProgressBackups, err := s.backupRepository.FindByDatabaseIdAndStatus(
+		databaseID,
+		backups_core.BackupStatusInProgress,
+	)
+	if err != nil {
+		s.logger.Error(
+			"Failed to check for in-progress backups",
+			"databaseId",
+			databaseID,
+			"error",
+			err,
+		)
+		return
+	}
+
+	if len(inProgressBackups) > 0 {
+		s.logger.Warn(
+			"Backup already in progress for database, skipping new backup",
+			"databaseId",
+			databaseID,
+			"existingBackupId",
+			inProgressBackups[0].ID,
+		)
 		return
 	}
 
@@ -266,6 +285,10 @@ func (s *BackupsScheduler) GetRemainedBackupTryCount(lastBackup *backups_core.Ba
 		return 0
 	}
 
+	if lastBackup.IsSkipRetry {
+		return 0
+	}
+
 	backupConfig, err := s.backupConfigService.GetBackupConfigByDbId(lastBackup.DatabaseID)
 	if err != nil {
 		s.logger.Error("Failed to get backup config by database ID", "error", err)
@@ -296,74 +319,6 @@ func (s *BackupsScheduler) GetRemainedBackupTryCount(lastBackup *backups_core.Ba
 	}
 
 	return maxFailedTriesCount - len(lastFailedBackups)
-}
-
-func (s *BackupsScheduler) cleanOldBackups() error {
-	enabledBackupConfigs, err := s.backupConfigService.GetBackupConfigsWithEnabledBackups()
-	if err != nil {
-		return err
-	}
-
-	for _, backupConfig := range enabledBackupConfigs {
-		backupStorePeriod := backupConfig.StorePeriod
-
-		if backupStorePeriod == period.PeriodForever {
-			continue
-		}
-
-		storeDuration := backupStorePeriod.ToDuration()
-		dateBeforeBackupsShouldBeDeleted := time.Now().UTC().Add(-storeDuration)
-
-		oldBackups, err := s.backupRepository.FindBackupsBeforeDate(
-			backupConfig.DatabaseID,
-			dateBeforeBackupsShouldBeDeleted,
-		)
-		if err != nil {
-			s.logger.Error(
-				"Failed to find old backups for database",
-				"databaseId",
-				backupConfig.DatabaseID,
-				"error",
-				err,
-			)
-			continue
-		}
-
-		for _, backup := range oldBackups {
-			storage, err := s.storageService.GetStorageByID(backup.StorageID)
-			if err != nil {
-				s.logger.Error(
-					"Failed to get storage by ID",
-					"storageId",
-					backup.StorageID,
-					"error",
-					err,
-				)
-				continue
-			}
-
-			encryptor := encryption.GetFieldEncryptor()
-			err = storage.DeleteFile(encryptor, backup.ID)
-			if err != nil {
-				s.logger.Error("Failed to delete backup file", "backupId", backup.ID, "error", err)
-			}
-
-			if err := s.backupRepository.DeleteByID(backup.ID); err != nil {
-				s.logger.Error("Failed to delete old backup", "backupId", backup.ID, "error", err)
-				continue
-			}
-
-			s.logger.Info(
-				"Deleted old backup",
-				"backupId",
-				backup.ID,
-				"databaseId",
-				backupConfig.DatabaseID,
-			)
-		}
-	}
-
-	return nil
 }
 
 func (s *BackupsScheduler) runPendingBackups() error {

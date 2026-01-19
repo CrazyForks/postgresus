@@ -55,19 +55,38 @@ func CreateTestBackuperNode() *BackuperNode {
 	}
 }
 
+func CreateTestBackuperNodeWithUseCase(useCase backups_core.CreateBackupUsecase) *BackuperNode {
+	return &BackuperNode{
+		databaseService:     databases.GetDatabaseService(),
+		fieldEncryptor:      encryption.GetFieldEncryptor(),
+		workspaceService:    workspaces_services.GetWorkspaceService(),
+		backupRepository:    backupRepository,
+		backupConfigService: backups_config.GetBackupConfigService(),
+		storageService:      storages.GetStorageService(),
+		notificationSender:  notifiers.GetNotifierService(),
+		backupCancelManager: taskCancelManager,
+		backupNodesRegistry: backupNodesRegistry,
+		logger:              logger.GetLogger(),
+		createBackupUseCase: useCase,
+		nodeID:              uuid.New(),
+		lastHeartbeat:       time.Time{},
+		runOnce:             sync.Once{},
+		hasRun:              atomic.Bool{},
+	}
+}
+
 func CreateTestScheduler() *BackupsScheduler {
 	return &BackupsScheduler{
-		backupRepository,
-		backups_config.GetBackupConfigService(),
-		storages.GetStorageService(),
-		taskCancelManager,
-		backupNodesRegistry,
-		time.Now().UTC(),
-		logger.GetLogger(),
-		make(map[uuid.UUID]BackupToNodeRelation),
-		CreateTestBackuperNode(),
-		sync.Once{},
-		atomic.Bool{},
+		backupRepository:      backupRepository,
+		backupConfigService:   backups_config.GetBackupConfigService(),
+		taskCancelManager:     taskCancelManager,
+		backupNodesRegistry:   backupNodesRegistry,
+		lastBackupTime:        time.Now().UTC(),
+		logger:                logger.GetLogger(),
+		backupToNodeRelations: make(map[uuid.UUID]BackupToNodeRelation),
+		backuperNode:          CreateTestBackuperNode(),
+		runOnce:               sync.Once{},
+		hasRun:                atomic.Bool{},
 	}
 }
 
