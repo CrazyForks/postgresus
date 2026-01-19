@@ -272,6 +272,10 @@ func runBackgroundTasks(log *slog.Logger) {
 			backuping.GetBackupsScheduler().Run(ctx)
 		})
 
+		go runWithPanicLogging(log, "backup cleaner background service", func() {
+			backuping.GetBackupCleaner().Run(ctx)
+		})
+
 		go runWithPanicLogging(log, "restore background service", func() {
 			restoring.GetRestoresScheduler().Run(ctx)
 		})

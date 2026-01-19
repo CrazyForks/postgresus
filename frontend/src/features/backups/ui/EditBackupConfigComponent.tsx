@@ -79,7 +79,10 @@ export const EditBackupConfigComponent = ({
 
   const [isShowWarn, setIsShowWarn] = useState(false);
 
-  const hasAdvancedValues = !!backupConfig?.isRetryIfFailed;
+  const hasAdvancedValues =
+    !!backupConfig?.isRetryIfFailed ||
+    (backupConfig?.maxBackupSizeMb ?? 0) > 0 ||
+    (backupConfig?.maxBackupsTotalSizeMb ?? 0) > 0;
   const [isShowAdvanced, setShowAdvanced] = useState(hasAdvancedValues);
 
   const timeFormat = useMemo(() => {
@@ -162,6 +165,9 @@ export const EditBackupConfigComponent = ({
         isRetryIfFailed: true,
         maxFailedTriesCount: 3,
         encryption: BackupEncryption.ENCRYPTED,
+
+        maxBackupSizeMb: 0,
+        maxBackupsTotalSizeMb: 0,
       });
     }
     loadStorages();
@@ -562,6 +568,89 @@ export const EditBackupConfigComponent = ({
                 >
                   <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
                 </Tooltip>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-5 mb-1 flex w-full flex-col items-start sm:flex-row sm:items-center">
+            <div className="mb-1 min-w-[150px] sm:mb-0">Max backup size limit</div>
+            <div className="flex items-center">
+              <Checkbox
+                checked={backupConfig.maxBackupSizeMb > 0}
+                onChange={(e) => {
+                  updateBackupConfig({
+                    maxBackupSizeMb: e.target.checked ? backupConfig.maxBackupSizeMb || 1000 : 0,
+                  });
+                }}
+              >
+                Enable
+              </Checkbox>
+
+              <Tooltip
+                className="cursor-pointer"
+                title="Limits the size of each individual backup. Note that backups are typically 15× smaller than the database size. For example, a 100 MB backup represents approximately 1.5 GB database."
+              >
+                <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
+              </Tooltip>
+            </div>
+          </div>
+
+          {backupConfig.maxBackupSizeMb > 0 && (
+            <div className="mb-1 flex w-full flex-col items-start sm:flex-row sm:items-center">
+              <div className="mb-1 min-w-[150px] sm:mb-0">Max backup size (MB)</div>
+
+              <InputNumber
+                min={1}
+                value={backupConfig.maxBackupSizeMb}
+                onChange={(value) => updateBackupConfig({ maxBackupSizeMb: value || 1 })}
+                size="small"
+                className="w-full max-w-[100px] grow"
+              />
+
+              <div className="ml-2 text-xs text-gray-600 dark:text-gray-400">
+                {(backupConfig.maxBackupSizeMb / 1024).toFixed(2)} GB
+              </div>
+            </div>
+          )}
+
+          <div className="mb-1 flex w-full flex-col items-start sm:flex-row sm:items-center">
+            <div className="mb-1 min-w-[150px] sm:mb-0">Limit total backups size</div>
+            <div className="flex items-center">
+              <Checkbox
+                checked={backupConfig.maxBackupsTotalSizeMb > 0}
+                onChange={(e) => {
+                  updateBackupConfig({
+                    maxBackupsTotalSizeMb: e.target.checked
+                      ? backupConfig.maxBackupsTotalSizeMb || 1_000_000
+                      : 0,
+                  });
+                }}
+              >
+                Enable
+              </Checkbox>
+
+              <Tooltip
+                className="cursor-pointer"
+                title="Limits the total size of all backups in storage. Once this limit is exceeded, the oldest backups are automatically removed until the total size is within the limit again."
+              >
+                <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
+              </Tooltip>
+            </div>
+          </div>
+
+          {backupConfig.maxBackupsTotalSizeMb > 0 && (
+            <div className="mb-1 flex w-full flex-col items-start sm:flex-row sm:items-center">
+              <div className="mb-1 min-w-[150px] sm:mb-0">Max total size (MB)</div>
+              <InputNumber
+                min={1}
+                value={backupConfig.maxBackupsTotalSizeMb}
+                onChange={(value) => updateBackupConfig({ maxBackupsTotalSizeMb: value || 1 })}
+                size="small"
+                className="w-full max-w-[100px] grow"
+              />
+
+              <div className="ml-2 text-xs text-gray-600 dark:text-gray-400">
+                {(backupConfig.maxBackupsTotalSizeMb / 1024).toFixed(2)} GB
               </div>
             </div>
           )}

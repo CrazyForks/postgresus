@@ -1,8 +1,16 @@
 package backuping
 
 import (
-	"databasus-backend/internal/features/notifiers"
+	"context"
+	"errors"
 
+	common "databasus-backend/internal/features/backups/backups/common"
+	backups_config "databasus-backend/internal/features/backups/config"
+	"databasus-backend/internal/features/databases"
+	"databasus-backend/internal/features/notifiers"
+	"databasus-backend/internal/features/storages"
+
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -16,4 +24,114 @@ func (m *MockNotificationSender) SendNotification(
 	message string,
 ) {
 	m.Called(notifier, title, message)
+}
+
+type CreateFailedBackupUsecase struct{}
+
+func (uc *CreateFailedBackupUsecase) Execute(
+	ctx context.Context,
+	backupID uuid.UUID,
+	backupConfig *backups_config.BackupConfig,
+	database *databases.Database,
+	storage *storages.Storage,
+	backupProgressListener func(completedMBs float64),
+) (*common.BackupMetadata, error) {
+	backupProgressListener(10)
+	return nil, errors.New("backup failed")
+}
+
+type CreateSuccessBackupUsecase struct{}
+
+func (uc *CreateSuccessBackupUsecase) Execute(
+	ctx context.Context,
+	backupID uuid.UUID,
+	backupConfig *backups_config.BackupConfig,
+	database *databases.Database,
+	storage *storages.Storage,
+	backupProgressListener func(completedMBs float64),
+) (*common.BackupMetadata, error) {
+	backupProgressListener(10)
+	return &common.BackupMetadata{
+		EncryptionSalt: nil,
+		EncryptionIV:   nil,
+		Encryption:     backups_config.BackupEncryptionNone,
+	}, nil
+}
+
+// CreateLargeBackupUsecase simulates a large backup (10000 MB)
+type CreateLargeBackupUsecase struct{}
+
+func (uc *CreateLargeBackupUsecase) Execute(
+	ctx context.Context,
+	backupID uuid.UUID,
+	backupConfig *backups_config.BackupConfig,
+	database *databases.Database,
+	storage *storages.Storage,
+	backupProgressListener func(completedMBs float64),
+) (*common.BackupMetadata, error) {
+	backupProgressListener(10000)
+	return &common.BackupMetadata{
+		EncryptionSalt: nil,
+		EncryptionIV:   nil,
+		Encryption:     backups_config.BackupEncryptionNone,
+	}, nil
+}
+
+// CreateProgressiveBackupUsecase simulates progressive size updates that exceed limit
+type CreateProgressiveBackupUsecase struct{}
+
+func (uc *CreateProgressiveBackupUsecase) Execute(
+	ctx context.Context,
+	backupID uuid.UUID,
+	backupConfig *backups_config.BackupConfig,
+	database *databases.Database,
+	storage *storages.Storage,
+	backupProgressListener func(completedMBs float64),
+) (*common.BackupMetadata, error) {
+	// Simulate progressive backup that grows beyond limit
+	backupProgressListener(1)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	backupProgressListener(3)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	backupProgressListener(5)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	backupProgressListener(10) // This exceeds the 5 MB limit
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	// Should not reach here due to cancellation
+	return &common.BackupMetadata{
+		EncryptionSalt: nil,
+		EncryptionIV:   nil,
+		Encryption:     backups_config.BackupEncryptionNone,
+	}, nil
+}
+
+// CreateMediumBackupUsecase simulates a 50 MB backup
+type CreateMediumBackupUsecase struct{}
+
+func (uc *CreateMediumBackupUsecase) Execute(
+	ctx context.Context,
+	backupID uuid.UUID,
+	backupConfig *backups_config.BackupConfig,
+	database *databases.Database,
+	storage *storages.Storage,
+	backupProgressListener func(completedMBs float64),
+) (*common.BackupMetadata, error) {
+	backupProgressListener(50)
+	return &common.BackupMetadata{
+		EncryptionSalt: nil,
+		EncryptionIV:   nil,
+		Encryption:     backups_config.BackupEncryptionNone,
+	}, nil
 }

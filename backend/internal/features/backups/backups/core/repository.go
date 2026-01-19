@@ -212,3 +212,36 @@ func (r *BackupRepository) CountByDatabaseID(databaseID uuid.UUID) (int64, error
 
 	return count, nil
 }
+
+func (r *BackupRepository) GetTotalSizeByDatabase(databaseID uuid.UUID) (float64, error) {
+	var totalSize float64
+
+	if err := storage.
+		GetDb().
+		Model(&Backup{}).
+		Select("COALESCE(SUM(backup_size_mb), 0)").
+		Where("database_id = ? AND status != ?", databaseID, BackupStatusInProgress).
+		Scan(&totalSize).Error; err != nil {
+		return 0, err
+	}
+
+	return totalSize, nil
+}
+
+func (r *BackupRepository) FindOldestByDatabaseExcludingInProgress(
+	databaseID uuid.UUID,
+	limit int,
+) ([]*Backup, error) {
+	var backups []*Backup
+
+	if err := storage.
+		GetDb().
+		Where("database_id = ? AND status != ?", databaseID, BackupStatusInProgress).
+		Order("created_at ASC").
+		Limit(limit).
+		Find(&backups).Error; err != nil {
+		return nil, err
+	}
+
+	return backups, nil
+}

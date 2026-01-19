@@ -31,6 +31,11 @@ type BackupConfig struct {
 	MaxFailedTriesCount int  `json:"maxFailedTriesCount" gorm:"column:max_failed_tries_count;type:int;not null"`
 
 	Encryption BackupEncryption `json:"encryption" gorm:"column:encryption;type:text;not null;default:'NONE'"`
+
+	// MaxBackupSizeMB limits individual backup size. 0 = unlimited.
+	MaxBackupSizeMB int64 `json:"maxBackupSizeMb"       gorm:"column:max_backup_size_mb;type:int;not null"`
+	// MaxBackupsTotalSizeMB limits total size of all backups. 0 = unlimited.
+	MaxBackupsTotalSizeMB int64 `json:"maxBackupsTotalSizeMb" gorm:"column:max_backups_total_size_mb;type:int;not null"`
 }
 
 func (h *BackupConfig) TableName() string {
@@ -89,20 +94,30 @@ func (b *BackupConfig) Validate() error {
 		return errors.New("encryption must be NONE or ENCRYPTED")
 	}
 
+	if b.MaxBackupSizeMB < 0 {
+		return errors.New("max backup size must be non-negative")
+	}
+
+	if b.MaxBackupsTotalSizeMB < 0 {
+		return errors.New("max backups total size must be non-negative")
+	}
+
 	return nil
 }
 
 func (b *BackupConfig) Copy(newDatabaseID uuid.UUID) *BackupConfig {
 	return &BackupConfig{
-		DatabaseID:          newDatabaseID,
-		IsBackupsEnabled:    b.IsBackupsEnabled,
-		StorePeriod:         b.StorePeriod,
-		BackupIntervalID:    uuid.Nil,
-		BackupInterval:      b.BackupInterval.Copy(),
-		StorageID:           b.StorageID,
-		SendNotificationsOn: b.SendNotificationsOn,
-		IsRetryIfFailed:     b.IsRetryIfFailed,
-		MaxFailedTriesCount: b.MaxFailedTriesCount,
-		Encryption:          b.Encryption,
+		DatabaseID:            newDatabaseID,
+		IsBackupsEnabled:      b.IsBackupsEnabled,
+		StorePeriod:           b.StorePeriod,
+		BackupIntervalID:      uuid.Nil,
+		BackupInterval:        b.BackupInterval.Copy(),
+		StorageID:             b.StorageID,
+		SendNotificationsOn:   b.SendNotificationsOn,
+		IsRetryIfFailed:       b.IsRetryIfFailed,
+		MaxFailedTriesCount:   b.MaxFailedTriesCount,
+		Encryption:            b.Encryption,
+		MaxBackupSizeMB:       b.MaxBackupSizeMB,
+		MaxBackupsTotalSizeMB: b.MaxBackupsTotalSizeMB,
 	}
 }

@@ -24,6 +24,17 @@ var backupRepository = &backups_core.BackupRepository{}
 
 var taskCancelManager = tasks_cancellation.GetTaskCancelManager()
 
+var backupCleaner = &BackupCleaner{
+	backupRepository:      backupRepository,
+	storageService:        storages.GetStorageService(),
+	backupConfigService:   backups_config.GetBackupConfigService(),
+	fieldEncryptor:        encryption.GetFieldEncryptor(),
+	logger:                logger.GetLogger(),
+	backupRemoveListeners: []backups_core.BackupRemoveListener{},
+	runOnce:               sync.Once{},
+	hasRun:                atomic.Bool{},
+}
+
 var backupNodesRegistry = &BackupNodesRegistry{
 	client:            cache_utils.GetValkeyClient(),
 	logger:            logger.GetLogger(),
@@ -59,7 +70,6 @@ var backuperNode = &BackuperNode{
 var backupsScheduler = &BackupsScheduler{
 	backupRepository:      backupRepository,
 	backupConfigService:   backups_config.GetBackupConfigService(),
-	storageService:        storages.GetStorageService(),
 	taskCancelManager:     taskCancelManager,
 	backupNodesRegistry:   backupNodesRegistry,
 	lastBackupTime:        time.Now().UTC(),
@@ -80,4 +90,8 @@ func GetBackuperNode() *BackuperNode {
 
 func GetBackupNodesRegistry() *BackupNodesRegistry {
 	return backupNodesRegistry
+}
+
+func GetBackupCleaner() *BackupCleaner {
+	return backupCleaner
 }

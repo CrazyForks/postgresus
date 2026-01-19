@@ -1101,3 +1101,84 @@ func Test_StartBackup_WhenBackupAlreadyInProgress_SkipsNewBackup(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 }
+
+func Test_RunPendingBackups_WhenLastBackupFailedWithIsSkipRetry_SkipsBackupEvenWithRetriesEnabled(
+	t *testing.T,
+) {
+	cache_utils.ClearAllCache()
+	backuperNode := CreateTestBackuperNode()
+	cancel := StartBackuperNodeForTest(t, backuperNode)
+	defer StopBackuperNodeForTest(t, cancel, backuperNode)
+
+	user := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+	router := CreateTestRouter()
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", user, router)
+	storage := storages.CreateTestStorage(workspace.ID)
+	notifier := notifiers.CreateTestNotifier(workspace.ID)
+	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
+
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		storages.RemoveTestStorage(storage.ID)
+		notifiers.RemoveTestNotifier(notifier)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
+
+	// Enable backups with retries enabled and high retry count
+	backupConfig, err := backups_config.GetBackupConfigService().GetBackupConfigByDbId(database.ID)
+	assert.NoError(t, err)
+
+	timeOfDay := "04:00"
+	backupConfig.BackupInterval = &intervals.Interval{
+		Interval:  intervals.IntervalDaily,
+		TimeOfDay: &timeOfDay,
+	}
+	backupConfig.IsBackupsEnabled = true
+	backupConfig.StorePeriod = period.PeriodWeek
+	backupConfig.Storage = storage
+	backupConfig.StorageID = &storage.ID
+	backupConfig.IsRetryIfFailed = true
+	backupConfig.MaxFailedTriesCount = 5
+
+	_, err = backups_config.GetBackupConfigService().SaveBackupConfig(backupConfig)
+	assert.NoError(t, err)
+
+	// Create a failed backup with IsSkipRetry set to true
+	failMessage := "backup failed due to size limit exceeded"
+	backupRepository.Save(&backups_core.Backup{
+		DatabaseID: database.ID,
+		StorageID:  storage.ID,
+
+		Status:      backups_core.BackupStatusFailed,
+		FailMessage: &failMessage,
+		IsSkipRetry: true,
+
+		CreatedAt: time.Now().UTC().Add(-1 * time.Hour),
+	})
+
+	// Verify GetRemainedBackupTryCount returns 0 even though retries are enabled
+	lastBackup, err := backupRepository.FindLastByDatabaseID(database.ID)
+	assert.NoError(t, err)
+	assert.NotNil(t, lastBackup)
+
+	remainedTries := GetBackupsScheduler().GetRemainedBackupTryCount(lastBackup)
+	assert.Equal(t, 0, remainedTries, "Should return 0 tries when IsSkipRetry is true")
+
+	// Run the scheduler
+	GetBackupsScheduler().runPendingBackups()
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify no new backup was created (still only 1 backup exists)
+	backups, err := backupRepository.FindByDatabaseID(database.ID)
+	assert.NoError(t, err)
+	assert.Len(t, backups, 1, "No retry should be attempted when IsSkipRetry is true")
+
+	time.Sleep(200 * time.Millisecond)
+}
