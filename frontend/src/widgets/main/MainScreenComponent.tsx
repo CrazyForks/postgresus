@@ -24,12 +24,14 @@ import {
   WorkspaceSettingsComponent,
 } from '../../features/workspaces';
 import { useIsMobile, useScreenHeight } from '../../shared/hooks';
+import { useTheme } from '../../shared/theme';
 import { SidebarComponent } from './SidebarComponent';
 import { ThemeToggleComponent } from './ThemeToggleComponent';
 import { WorkspaceSelectionComponent } from './WorkspaceSelectionComponent';
 
 export const MainScreenComponent = () => {
   const { message } = App.useApp();
+  const { resolvedTheme } = useTheme();
   const screenHeight = useScreenHeight();
   const isMobile = useIsMobile();
   const contentHeight = screenHeight - (isMobile ? 70 : 95);
@@ -238,6 +240,7 @@ export const MainScreenComponent = () => {
           <div className="mt-1">
             <GitHubButton
               href="https://github.com/databasus/databasus"
+              data-color-scheme={resolvedTheme}
               data-icon="octicon-star"
               data-size="large"
               data-show-count="true"
