@@ -166,6 +166,33 @@ func (s *BackupsScheduler) StartBackup(databaseID uuid.UUID, isCallNotifier bool
 		return
 	}
 
+	// Check for existing in-progress backups
+	inProgressBackups, err := s.backupRepository.FindByDatabaseIdAndStatus(
+		databaseID,
+		backups_core.BackupStatusInProgress,
+	)
+	if err != nil {
+		s.logger.Error(
+			"Failed to check for in-progress backups",
+			"databaseId",
+			databaseID,
+			"error",
+			err,
+		)
+		return
+	}
+
+	if len(inProgressBackups) > 0 {
+		s.logger.Warn(
+			"Backup already in progress for database, skipping new backup",
+			"databaseId",
+			databaseID,
+			"existingBackupId",
+			inProgressBackups[0].ID,
+		)
+		return
+	}
+
 	leastBusyNodeID, err := s.calculateLeastBusyNode()
 	if err != nil {
 		s.logger.Error(

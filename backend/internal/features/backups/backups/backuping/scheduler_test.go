@@ -1033,3 +1033,71 @@ func Test_StartBackup_WhenBackupFails_DecrementsActiveTaskCount(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 }
+
+func Test_StartBackup_WhenBackupAlreadyInProgress_SkipsNewBackup(t *testing.T) {
+	cache_utils.ClearAllCache()
+	backuperNode := CreateTestBackuperNode()
+	cancel := StartBackuperNodeForTest(t, backuperNode)
+	defer StopBackuperNodeForTest(t, cancel, backuperNode)
+
+	user := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+	router := CreateTestRouter()
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", user, router)
+	storage := storages.CreateTestStorage(workspace.ID)
+	notifier := notifiers.CreateTestNotifier(workspace.ID)
+	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
+
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		storages.RemoveTestStorage(storage.ID)
+		notifiers.RemoveTestNotifier(notifier)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
+
+	backupConfig, err := backups_config.GetBackupConfigService().GetBackupConfigByDbId(database.ID)
+	assert.NoError(t, err)
+
+	timeOfDay := "04:00"
+	backupConfig.BackupInterval = &intervals.Interval{
+		Interval:  intervals.IntervalDaily,
+		TimeOfDay: &timeOfDay,
+	}
+	backupConfig.IsBackupsEnabled = true
+	backupConfig.StorePeriod = period.PeriodWeek
+	backupConfig.Storage = storage
+	backupConfig.StorageID = &storage.ID
+
+	_, err = backups_config.GetBackupConfigService().SaveBackupConfig(backupConfig)
+	assert.NoError(t, err)
+
+	// Create an in-progress backup manually
+	inProgressBackup := &backups_core.Backup{
+		DatabaseID:   database.ID,
+		StorageID:    storage.ID,
+		Status:       backups_core.BackupStatusInProgress,
+		BackupSizeMb: 0,
+		CreatedAt:    time.Now().UTC(),
+	}
+	err = backupRepository.Save(inProgressBackup)
+	assert.NoError(t, err)
+
+	// Try to start a new backup - should be skipped
+	GetBackupsScheduler().StartBackup(database.ID, false)
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Verify only 1 backup exists (the original in-progress one)
+	backups, err := backupRepository.FindByDatabaseID(database.ID)
+	assert.NoError(t, err)
+	assert.Len(t, backups, 1)
+	assert.Equal(t, backups_core.BackupStatusInProgress, backups[0].Status)
+	assert.Equal(t, inProgressBackup.ID, backups[0].ID)
+
+	time.Sleep(200 * time.Millisecond)
+}
