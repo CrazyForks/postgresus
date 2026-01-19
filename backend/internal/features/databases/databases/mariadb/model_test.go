@@ -694,6 +694,115 @@ func Test_TestConnection_DatabaseWithUnderscores_Success(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func Test_TestConnection_DatabaseWithUnderscoresAndAllPrivileges_Success(t *testing.T) {
+	env := config.GetEnv()
+	cases := []struct {
+		name    string
+		version tools.MariadbVersion
+		port    string
+	}{
+		{"MariaDB 5.5", tools.MariadbVersion55, env.TestMariadb55Port},
+		{"MariaDB 10.1", tools.MariadbVersion101, env.TestMariadb101Port},
+		{"MariaDB 10.2", tools.MariadbVersion102, env.TestMariadb102Port},
+		{"MariaDB 10.3", tools.MariadbVersion103, env.TestMariadb103Port},
+		{"MariaDB 10.4", tools.MariadbVersion104, env.TestMariadb104Port},
+		{"MariaDB 10.5", tools.MariadbVersion105, env.TestMariadb105Port},
+		{"MariaDB 10.6", tools.MariadbVersion106, env.TestMariadb106Port},
+		{"MariaDB 10.11", tools.MariadbVersion1011, env.TestMariadb1011Port},
+		{"MariaDB 11.4", tools.MariadbVersion114, env.TestMariadb114Port},
+		{"MariaDB 11.8", tools.MariadbVersion118, env.TestMariadb118Port},
+		{"MariaDB 12.0", tools.MariadbVersion120, env.TestMariadb120Port},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			container := connectToMariadbContainer(t, tc.port, tc.version)
+			defer container.DB.Close()
+
+			underscoreDbName := "test_all_db"
+
+			_, err := container.DB.Exec(
+				fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", underscoreDbName),
+			)
+			assert.NoError(t, err)
+
+			_, err = container.DB.Exec(fmt.Sprintf("CREATE DATABASE `%s`", underscoreDbName))
+			assert.NoError(t, err)
+
+			defer func() {
+				_, _ = container.DB.Exec(
+					fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", underscoreDbName),
+				)
+			}()
+
+			underscoreDSN := fmt.Sprintf(
+				"%s:%s@tcp(%s:%d)/%s?parseTime=true",
+				container.Username,
+				container.Password,
+				container.Host,
+				container.Port,
+				underscoreDbName,
+			)
+			underscoreDB, err := sqlx.Connect("mysql", underscoreDSN)
+			assert.NoError(t, err)
+			defer underscoreDB.Close()
+
+			_, err = underscoreDB.Exec(`
+				CREATE TABLE all_priv_test (
+					id INT AUTO_INCREMENT PRIMARY KEY,
+					data VARCHAR(255) NOT NULL
+				)
+			`)
+			assert.NoError(t, err)
+
+			_, err = underscoreDB.Exec(`INSERT INTO all_priv_test (data) VALUES ('test1')`)
+			assert.NoError(t, err)
+
+			allPrivUsername := fmt.Sprintf("allpriv%s", uuid.New().String()[:8])
+			allPrivPassword := "allprivpass123"
+
+			_, err = underscoreDB.Exec(fmt.Sprintf(
+				"CREATE USER '%s'@'%%' IDENTIFIED BY '%s'",
+				allPrivUsername,
+				allPrivPassword,
+			))
+			assert.NoError(t, err)
+
+			_, err = underscoreDB.Exec(fmt.Sprintf(
+				"GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%'",
+				underscoreDbName,
+				allPrivUsername,
+			))
+			assert.NoError(t, err)
+
+			_, err = underscoreDB.Exec("FLUSH PRIVILEGES")
+			assert.NoError(t, err)
+
+			defer dropUserSafe(underscoreDB, allPrivUsername)
+
+			mariadbModel := &MariadbDatabase{
+				Version:  tc.version,
+				Host:     container.Host,
+				Port:     container.Port,
+				Username: allPrivUsername,
+				Password: allPrivPassword,
+				Database: &underscoreDbName,
+				IsHttps:  false,
+			}
+
+			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+			err = mariadbModel.TestConnection(logger, nil, uuid.New())
+			assert.NoError(t, err)
+			assert.NotEmpty(t, mariadbModel.Privileges)
+			assert.Contains(t, mariadbModel.Privileges, "SELECT")
+			assert.Contains(t, mariadbModel.Privileges, "SHOW VIEW")
+		})
+	}
+}
+
 type MariadbContainer struct {
 	Host     string
 	Port     int

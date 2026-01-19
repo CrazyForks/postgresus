@@ -515,9 +515,13 @@ func detectPrivileges(ctx context.Context, db *sql.DB, database string) (string,
 	hasProcess := false
 	hasAllPrivileges := false
 
+	// Escape underscores to match MariaDB's grant output format
+	// MariaDB escapes _ as \_ in SHOW GRANTS output
+	// Pattern matches either literal _ or escaped \_
+	escapedDbName := strings.ReplaceAll(regexp.QuoteMeta(database), "_", `(_|\\_)`)
 	dbPatternStr := fmt.Sprintf(
 		`(?i)ON\s+[\x60'"]?%s[\x60'"]?\s*\.\s*\*`,
-		regexp.QuoteMeta(database),
+		escapedDbName,
 	)
 	dbPattern := regexp.MustCompile(dbPatternStr)
 	globalPattern := regexp.MustCompile(`(?i)ON\s+\*\s*\.\s*\*`)

@@ -674,6 +674,112 @@ func Test_TestConnection_DatabaseWithUnderscores_Success(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func Test_TestConnection_DatabaseWithUnderscoresAndAllPrivileges_Success(t *testing.T) {
+	env := config.GetEnv()
+	cases := []struct {
+		name    string
+		version tools.MysqlVersion
+		port    string
+	}{
+		{"MySQL 5.7", tools.MysqlVersion57, env.TestMysql57Port},
+		{"MySQL 8.0", tools.MysqlVersion80, env.TestMysql80Port},
+		{"MySQL 8.4", tools.MysqlVersion84, env.TestMysql84Port},
+		{"MySQL 9", tools.MysqlVersion9, env.TestMysql90Port},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			container := connectToMysqlContainer(t, tc.port, tc.version)
+			defer container.DB.Close()
+
+			underscoreDbName := "test_all_db"
+
+			_, err := container.DB.Exec(
+				fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", underscoreDbName),
+			)
+			assert.NoError(t, err)
+
+			_, err = container.DB.Exec(fmt.Sprintf("CREATE DATABASE `%s`", underscoreDbName))
+			assert.NoError(t, err)
+
+			defer func() {
+				_, _ = container.DB.Exec(
+					fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", underscoreDbName),
+				)
+			}()
+
+			underscoreDSN := fmt.Sprintf(
+				"%s:%s@tcp(%s:%d)/%s?parseTime=true",
+				container.Username,
+				container.Password,
+				container.Host,
+				container.Port,
+				underscoreDbName,
+			)
+			underscoreDB, err := sqlx.Connect("mysql", underscoreDSN)
+			assert.NoError(t, err)
+			defer underscoreDB.Close()
+
+			_, err = underscoreDB.Exec(`
+				CREATE TABLE all_priv_test (
+					id INT AUTO_INCREMENT PRIMARY KEY,
+					data VARCHAR(255) NOT NULL
+				)
+			`)
+			assert.NoError(t, err)
+
+			_, err = underscoreDB.Exec(`INSERT INTO all_priv_test (data) VALUES ('test1')`)
+			assert.NoError(t, err)
+
+			allPrivUsername := fmt.Sprintf("allpriv_%s", uuid.New().String()[:8])
+			allPrivPassword := "allprivpass123"
+
+			_, err = underscoreDB.Exec(fmt.Sprintf(
+				"CREATE USER '%s'@'%%' IDENTIFIED BY '%s'",
+				allPrivUsername,
+				allPrivPassword,
+			))
+			assert.NoError(t, err)
+
+			_, err = underscoreDB.Exec(fmt.Sprintf(
+				"GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%'",
+				underscoreDbName,
+				allPrivUsername,
+			))
+			assert.NoError(t, err)
+
+			_, err = underscoreDB.Exec("FLUSH PRIVILEGES")
+			assert.NoError(t, err)
+
+			defer func() {
+				_, _ = container.DB.Exec(
+					fmt.Sprintf("DROP USER IF EXISTS '%s'@'%%'", allPrivUsername),
+				)
+			}()
+
+			mysqlModel := &MysqlDatabase{
+				Version:  tc.version,
+				Host:     container.Host,
+				Port:     container.Port,
+				Username: allPrivUsername,
+				Password: allPrivPassword,
+				Database: &underscoreDbName,
+				IsHttps:  false,
+			}
+
+			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+			err = mysqlModel.TestConnection(logger, nil, uuid.New())
+			assert.NoError(t, err)
+			assert.NotEmpty(t, mysqlModel.Privileges)
+			assert.Contains(t, mysqlModel.Privileges, "SELECT")
+			assert.Contains(t, mysqlModel.Privileges, "SHOW VIEW")
+		})
+	}
+}
+
 type MysqlContainer struct {
 	Host     string
 	Port     int
