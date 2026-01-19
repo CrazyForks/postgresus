@@ -70,16 +70,18 @@ func (n *BackuperNode) Run(ctx context.Context) {
 		}
 
 		backupHandler := func(backupID uuid.UUID, isCallNotifier bool) {
-			n.MakeBackup(backupID, isCallNotifier)
-			if err := n.backupNodesRegistry.PublishBackupCompletion(n.nodeID, backupID); err != nil {
-				n.logger.Error(
-					"Failed to publish backup completion",
-					"error",
-					err,
-					"backupID",
-					backupID,
-				)
-			}
+			go func() {
+				n.MakeBackup(backupID, isCallNotifier)
+				if err := n.backupNodesRegistry.PublishBackupCompletion(n.nodeID, backupID); err != nil {
+					n.logger.Error(
+						"Failed to publish backup completion",
+						"error",
+						err,
+						"backupID",
+						backupID,
+					)
+				}
+			}()
 		}
 
 		err := n.backupNodesRegistry.SubscribeNodeForBackupsAssignment(n.nodeID, backupHandler)

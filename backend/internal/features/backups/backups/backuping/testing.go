@@ -55,6 +55,26 @@ func CreateTestBackuperNode() *BackuperNode {
 	}
 }
 
+func CreateTestBackuperNodeWithUseCase(useCase backups_core.CreateBackupUsecase) *BackuperNode {
+	return &BackuperNode{
+		databaseService:     databases.GetDatabaseService(),
+		fieldEncryptor:      encryption.GetFieldEncryptor(),
+		workspaceService:    workspaces_services.GetWorkspaceService(),
+		backupRepository:    backupRepository,
+		backupConfigService: backups_config.GetBackupConfigService(),
+		storageService:      storages.GetStorageService(),
+		notificationSender:  notifiers.GetNotifierService(),
+		backupCancelManager: taskCancelManager,
+		backupNodesRegistry: backupNodesRegistry,
+		logger:              logger.GetLogger(),
+		createBackupUseCase: useCase,
+		nodeID:              uuid.New(),
+		lastHeartbeat:       time.Time{},
+		runOnce:             sync.Once{},
+		hasRun:              atomic.Bool{},
+	}
+}
+
 func CreateTestScheduler() *BackupsScheduler {
 	return &BackupsScheduler{
 		backupRepository:      backupRepository,

@@ -1182,3 +1182,140 @@ func Test_RunPendingBackups_WhenLastBackupFailedWithIsSkipRetry_SkipsBackupEvenW
 
 	time.Sleep(200 * time.Millisecond)
 }
+
+func Test_StartBackup_When2BackupsStartedForDifferentDatabases_BothUseCasesAreCalled(t *testing.T) {
+	cache_utils.ClearAllCache()
+
+	// Create mock tracking use case
+	mockUseCase := NewMockTrackingBackupUsecase()
+
+	// Create BackuperNode with mock use case
+	backuperNode := CreateTestBackuperNodeWithUseCase(mockUseCase)
+	cancel := StartBackuperNodeForTest(t, backuperNode)
+	defer StopBackuperNodeForTest(t, cancel, backuperNode)
+
+	// Create scheduler
+	scheduler := CreateTestScheduler()
+	schedulerCancel := StartSchedulerForTest(t, scheduler)
+	defer schedulerCancel()
+
+	// Setup test data
+	user := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+	router := CreateTestRouter()
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", user, router)
+	storage := storages.CreateTestStorage(workspace.ID)
+	notifier := notifiers.CreateTestNotifier(workspace.ID)
+
+	// Create 2 separate databases
+	database1 := databases.CreateTestDatabase(workspace.ID, storage, notifier)
+	database2 := databases.CreateTestDatabase(workspace.ID, storage, notifier)
+
+	defer func() {
+		// Cleanup backups for database1
+		backups1, _ := backupRepository.FindByDatabaseID(database1.ID)
+		for _, backup := range backups1 {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		// Cleanup backups for database2
+		backups2, _ := backupRepository.FindByDatabaseID(database2.ID)
+		for _, backup := range backups2 {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database1)
+		databases.RemoveTestDatabase(database2)
+		time.Sleep(50 * time.Millisecond)
+		storages.RemoveTestStorage(storage.ID)
+		notifiers.RemoveTestNotifier(notifier)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
+
+	// Enable backups for database1
+	backupConfig1, err := backups_config.GetBackupConfigService().
+		GetBackupConfigByDbId(database1.ID)
+	assert.NoError(t, err)
+
+	timeOfDay := "04:00"
+	backupConfig1.BackupInterval = &intervals.Interval{
+		Interval:  intervals.IntervalDaily,
+		TimeOfDay: &timeOfDay,
+	}
+	backupConfig1.IsBackupsEnabled = true
+	backupConfig1.StorePeriod = period.PeriodWeek
+	backupConfig1.Storage = storage
+	backupConfig1.StorageID = &storage.ID
+
+	_, err = backups_config.GetBackupConfigService().SaveBackupConfig(backupConfig1)
+	assert.NoError(t, err)
+
+	// Enable backups for database2
+	backupConfig2, err := backups_config.GetBackupConfigService().
+		GetBackupConfigByDbId(database2.ID)
+	assert.NoError(t, err)
+
+	backupConfig2.BackupInterval = &intervals.Interval{
+		Interval:  intervals.IntervalDaily,
+		TimeOfDay: &timeOfDay,
+	}
+	backupConfig2.IsBackupsEnabled = true
+	backupConfig2.StorePeriod = period.PeriodWeek
+	backupConfig2.Storage = storage
+	backupConfig2.StorageID = &storage.ID
+
+	_, err = backups_config.GetBackupConfigService().SaveBackupConfig(backupConfig2)
+	assert.NoError(t, err)
+
+	// Start 2 backups simultaneously
+	t.Log("Starting backup for database1")
+	scheduler.StartBackup(database1.ID, false)
+
+	t.Log("Starting backup for database2")
+	scheduler.StartBackup(database2.ID, false)
+
+	// Wait up to 10 seconds for both backups to complete
+	t.Log("Waiting for both backups to complete...")
+
+	success := assert.Eventually(t, func() bool {
+		callCount := mockUseCase.GetCallCount()
+		t.Logf("Current call count: %d/2", callCount)
+		return callCount == 2
+	}, 10*time.Second, 200*time.Millisecond, "Both use cases should be called within 10 seconds")
+
+	if !success {
+		t.Logf("Test failed: Only %d out of 2 use cases were called", mockUseCase.GetCallCount())
+	}
+
+	// Verify both backup IDs were received
+	calledBackupIDs := mockUseCase.GetCalledBackupIDs()
+	t.Logf("Called backup IDs: %v", calledBackupIDs)
+	assert.Len(t, calledBackupIDs, 2, "Both backup IDs should be tracked")
+
+	// Verify both backups exist in repository and are completed
+	backups1, err := backupRepository.FindByDatabaseID(database1.ID)
+	assert.NoError(t, err)
+	assert.Len(t, backups1, 1, "Database1 should have 1 backup")
+	if len(backups1) > 0 {
+		t.Logf("Database1 backup status: %s", backups1[0].Status)
+	}
+
+	backups2, err := backupRepository.FindByDatabaseID(database2.ID)
+	assert.NoError(t, err)
+	assert.Len(t, backups2, 1, "Database2 should have 1 backup")
+	if len(backups2) > 0 {
+		t.Logf("Database2 backup status: %s", backups2[0].Status)
+	}
+
+	// Verify both backups completed successfully
+	if len(backups1) > 0 {
+		assert.Equal(t, backups_core.BackupStatusCompleted, backups1[0].Status,
+			"Database1 backup should be completed")
+	}
+
+	if len(backups2) > 0 {
+		assert.Equal(t, backups_core.BackupStatusCompleted, backups2[0].Status,
+			"Database2 backup should be completed")
+	}
+
+	time.Sleep(200 * time.Millisecond)
+}

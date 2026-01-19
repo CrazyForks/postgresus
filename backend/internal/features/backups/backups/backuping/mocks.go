@@ -3,6 +3,8 @@ package backuping
 import (
 	"context"
 	"errors"
+	"sync/atomic"
+	"time"
 
 	common "databasus-backend/internal/features/backups/backups/common"
 	backups_config "databasus-backend/internal/features/backups/config"
@@ -134,4 +136,59 @@ func (uc *CreateMediumBackupUsecase) Execute(
 		EncryptionIV:   nil,
 		Encryption:     backups_config.BackupEncryptionNone,
 	}, nil
+}
+
+// MockTrackingBackupUsecase tracks backup use case calls for testing parallel execution
+type MockTrackingBackupUsecase struct {
+	callCount       atomic.Int32
+	calledBackupIDs chan uuid.UUID
+}
+
+func NewMockTrackingBackupUsecase() *MockTrackingBackupUsecase {
+	return &MockTrackingBackupUsecase{
+		calledBackupIDs: make(chan uuid.UUID, 10),
+	}
+}
+
+func (m *MockTrackingBackupUsecase) Execute(
+	ctx context.Context,
+	backupID uuid.UUID,
+	backupConfig *backups_config.BackupConfig,
+	database *databases.Database,
+	storage *storages.Storage,
+	backupProgressListener func(completedMBs float64),
+) (*common.BackupMetadata, error) {
+	m.callCount.Add(1)
+
+	// Send backup ID to channel (non-blocking)
+	select {
+	case m.calledBackupIDs <- backupID:
+	default:
+	}
+
+	// Simulate backup work
+	time.Sleep(100 * time.Millisecond)
+	backupProgressListener(10)
+
+	return &common.BackupMetadata{
+		EncryptionSalt: nil,
+		EncryptionIV:   nil,
+		Encryption:     backups_config.BackupEncryptionNone,
+	}, nil
+}
+
+func (m *MockTrackingBackupUsecase) GetCallCount() int32 {
+	return m.callCount.Load()
+}
+
+func (m *MockTrackingBackupUsecase) GetCalledBackupIDs() []uuid.UUID {
+	ids := []uuid.UUID{}
+	for {
+		select {
+		case id := <-m.calledBackupIDs:
+			ids = append(ids, id)
+		default:
+			return ids
+		}
+	}
 }
