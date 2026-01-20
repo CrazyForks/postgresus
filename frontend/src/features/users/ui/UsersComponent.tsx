@@ -366,7 +366,7 @@ export function UsersComponent({ contentHeight }: Props) {
   };
 
   return (
-    <div className="flex grow sm:pl-5">
+    <div className="flex grow">
       <div className="w-full">
         <div
           ref={scrollContainerRef}

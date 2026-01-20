@@ -165,7 +165,7 @@ export function WorkspaceSettingsComponent({ workspaceResponse, user, contentHei
   };
 
   return (
-    <div className="flex grow sm:pl-2">
+    <div className="flex grow">
       <div className="w-full">
         <div
           ref={scrollContainerRef}

@@ -1,7 +1,7 @@
 import { Dropdown } from 'antd';
 import type { MenuProps } from 'antd';
 
-import { type ThemeMode, useTheme } from '../../shared/theme';
+import { type ThemeMode, useTheme } from '../theme';
 
 const SunIcon = () => (
   <svg

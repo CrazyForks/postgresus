@@ -62,7 +62,7 @@ export const WorkspaceSelectionComponent = ({
 
   return (
     <div
-      className="my-1 flex-1 select-none md:ml-2 md:w-[250px] md:max-w-[250px]"
+      className="my-1 flex-1 select-none md:ml-2 md:w-[250px] md:max-w-[242px]"
       ref={dropdownRef}
     >
       <div className="mb-1 hidden text-xs text-gray-400 md:block" style={{ lineHeight: 0.7 }}>

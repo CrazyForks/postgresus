@@ -1,6 +1,5 @@
-import GitHubButton from 'react-github-btn';
-
-import { ThemeToggleComponent } from '../../../widgets/main/ThemeToggleComponent';
+import { StarButtonComponent } from '../../../shared/ui/StarButtonComponent';
+import { ThemeToggleComponent } from '../../../shared/ui/ThemeToggleComponent';
 
 export function AuthNavbarComponent() {
   return (
@@ -32,19 +31,11 @@ export function AuthNavbarComponent() {
           Community
         </a>
 
-        <div className="mt-[7px]">
-          <GitHubButton
-            href="https://github.com/databasus/databasus"
-            data-icon="octicon-star"
-            data-size="large"
-            data-show-count="true"
-            aria-label="Star Databasus on GitHub"
-          >
-            &nbsp;Star on GitHub
-          </GitHubButton>
-        </div>
+        <div className="flex items-center gap-2">
+          <StarButtonComponent />
 
-        <ThemeToggleComponent />
+          <ThemeToggleComponent />
+        </div>
       </div>
     </div>
   );
