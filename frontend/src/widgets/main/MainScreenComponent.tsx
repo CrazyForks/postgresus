@@ -1,7 +1,6 @@
 import { LoadingOutlined, MenuOutlined } from '@ant-design/icons';
 import { App, Button, Spin, Tooltip } from 'antd';
 import { useEffect, useState } from 'react';
-import GitHubButton from 'react-github-btn';
 
 import { APP_VERSION } from '../../constants';
 import { type DiskUsage, diskApi } from '../../entity/disk';
@@ -24,8 +23,9 @@ import {
   WorkspaceSettingsComponent,
 } from '../../features/workspaces';
 import { useIsMobile, useScreenHeight } from '../../shared/hooks';
+import { StarButtonComponent } from '../../shared/ui/StarButtonComponent';
+import { ThemeToggleComponent } from '../../shared/ui/ThemeToggleComponent';
 import { SidebarComponent } from './SidebarComponent';
-import { ThemeToggleComponent } from './ThemeToggleComponent';
 import { WorkspaceSelectionComponent } from './WorkspaceSelectionComponent';
 
 export const MainScreenComponent = () => {
@@ -113,6 +113,9 @@ export const MainScreenComponent = () => {
   const isUsedMoreThan95Percent =
     diskUsage && diskUsage.usedSpaceBytes / diskUsage.totalSpaceBytes > 0.95;
 
+  const isUsedMoreThan85Percent =
+    diskUsage && diskUsage.usedSpaceBytes / diskUsage.totalSpaceBytes > 0.85;
+
   const isCanManageDBs = selectedWorkspace?.userRole !== WorkspaceRole.VIEWER;
 
   const tabs = [
@@ -197,7 +200,7 @@ export const MainScreenComponent = () => {
           </a>
         </div>
 
-        <div className="ml-2 flex-1 pr-2 md:ml-5 md:flex-initial md:pr-0">
+        <div className="ml-2 flex-1 pr-2 md:ml-4 md:flex-initial md:pr-0">
           {!isLoading && (
             <WorkspaceSelectionComponent
               workspaces={workspaces}
@@ -220,14 +223,6 @@ export const MainScreenComponent = () => {
 
           <a
             className="!text-black hover:opacity-80 dark:!text-gray-200"
-            href="https://databasus.com/contribute"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Contribute
-          </a>
-          <a
-            className="!text-black hover:opacity-80 dark:!text-gray-200"
             href="https://t.me/databasus_community"
             target="_blank"
             rel="noreferrer"
@@ -235,19 +230,7 @@ export const MainScreenComponent = () => {
             Community
           </a>
 
-          <div className="mt-1">
-            <GitHubButton
-              href="https://github.com/databasus/databasus"
-              data-icon="octicon-star"
-              data-size="large"
-              data-show-count="true"
-              aria-label="Star databasus/databasus on GitHub"
-            >
-              &nbsp;Star Databasus on GitHub
-            </GitHubButton>
-          </div>
-
-          {diskUsage && (
+          {isUsedMoreThan85Percent && (
             <Tooltip title="To make backups locally and restore them, you need to have enough space on your disk. For restore, you need to have same amount of space that the backup size.">
               <div
                 className={`cursor-pointer text-center text-xs ${isUsedMoreThan95Percent ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}`}
@@ -261,7 +244,11 @@ export const MainScreenComponent = () => {
             </Tooltip>
           )}
 
-          <ThemeToggleComponent />
+          <div className="flex items-center gap-2">
+            <StarButtonComponent />
+
+            <ThemeToggleComponent />
+          </div>
         </div>
 
         <div className="ml-auto flex items-center gap-2 md:hidden">
@@ -273,6 +260,7 @@ export const MainScreenComponent = () => {
           />
         </div>
       </div>
+
       {isLoading ? (
         <div className="flex items-center justify-center py-2" style={{ height: contentHeight }}>
           <Spin indicator={<LoadingOutlined spin />} size="large" />
@@ -289,13 +277,23 @@ export const MainScreenComponent = () => {
             contentHeight={contentHeight}
           />
 
-          {selectedTab === 'profile' && <ProfileComponent contentHeight={contentHeight} />}
-
-          {selectedTab === 'databasus-settings' && (
-            <SettingsComponent contentHeight={contentHeight} />
+          {selectedTab === 'profile' && (
+            <div className="flex-1 md:pl-4">
+              <ProfileComponent contentHeight={contentHeight} />
+            </div>
           )}
 
-          {selectedTab === 'users' && <UsersComponent contentHeight={contentHeight} />}
+          {selectedTab === 'databasus-settings' && (
+            <div className="flex-1 md:pl-4">
+              <SettingsComponent contentHeight={contentHeight} />
+            </div>
+          )}
+
+          {selectedTab === 'users' && (
+            <div className="flex-1 md:pl-4">
+              <UsersComponent contentHeight={contentHeight} />
+            </div>
+          )}
 
           {(selectedTab === 'databases' ||
             selectedTab === 'storages' ||
@@ -320,7 +318,7 @@ export const MainScreenComponent = () => {
                 </div>
               ) : (
                 <>
-                  <div className="flex-1 md:pl-3">
+                  <div className="flex-1 md:pl-1">
                     {selectedTab === 'notifiers' && selectedWorkspace && (
                       <NotifiersComponent
                         contentHeight={contentHeight}
@@ -345,14 +343,17 @@ export const MainScreenComponent = () => {
                         key={`databases-${selectedWorkspace.id}`}
                       />
                     )}
-                    {selectedTab === 'settings' && selectedWorkspace && user && (
-                      <WorkspaceSettingsComponent
-                        workspaceResponse={selectedWorkspace}
-                        contentHeight={contentHeight}
-                        user={user}
-                        key={`settings-${selectedWorkspace.id}`}
-                      />
-                    )}
+
+                    <div className="flex-1 md:pl-3">
+                      {selectedTab === 'settings' && selectedWorkspace && user && (
+                        <WorkspaceSettingsComponent
+                          workspaceResponse={selectedWorkspace}
+                          contentHeight={contentHeight}
+                          user={user}
+                          key={`settings-${selectedWorkspace.id}`}
+                        />
+                      )}
+                    </div>
                   </div>
                 </>
               )}

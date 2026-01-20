@@ -1,13 +1,13 @@
 import { CloseOutlined } from '@ant-design/icons';
 import { Drawer, Tooltip } from 'antd';
 import { useEffect } from 'react';
-import GitHubButton from 'react-github-btn';
 
 import { type DiskUsage } from '../../entity/disk';
 import { type UserProfile, UserRole } from '../../entity/users';
 import { useIsMobile } from '../../shared/hooks';
 import { useTheme } from '../../shared/theme';
-import { ThemeToggleComponent } from './ThemeToggleComponent';
+import { StarButtonComponent } from '../../shared/ui/StarButtonComponent';
+import { ThemeToggleComponent } from '../../shared/ui/ThemeToggleComponent';
 
 interface TabItem {
   text: string;
@@ -213,15 +213,7 @@ export const SidebarComponent = ({
             </a>
 
             <div className="pt-2">
-              <GitHubButton
-                href="https://github.com/databasus/databasus"
-                data-icon="octicon-star"
-                data-size="large"
-                data-show-count="true"
-                aria-label="Star databasus/databasus on GitHub"
-              >
-                Star on GitHub
-              </GitHubButton>
+              <StarButtonComponent text="Star on GitHub" size="large" showCount />
             </div>
           </div>
         </div>
