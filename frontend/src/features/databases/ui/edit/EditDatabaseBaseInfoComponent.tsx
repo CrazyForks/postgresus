@@ -115,20 +115,20 @@ export const EditDatabaseBaseInfoComponent = ({
     <div>
       {isShowName && (
         <div className="mb-1 flex w-full items-center">
-          <div className="min-w-[150px]">Name</div>
+          <div className="min-w-[100px] md:min-w-[150px]">Name</div>
           <Input
             value={editingDatabase.name || ''}
             onChange={(e) => updateDatabase({ name: e.target.value })}
             size="small"
             placeholder="My favourite DB"
-            className="max-w-[200px] grow"
+            className="max-w-[150px] grow md:max-w-[200px]"
           />
         </div>
       )}
 
       {isShowType && (
         <div className="mb-1 flex w-full items-center">
-          <div className="min-w-[150px]">Database type</div>
+          <div className="min-w-[100px] md:min-w-[150px]">Database type</div>
 
           <div className="flex items-center">
             <Select
@@ -136,7 +136,7 @@ export const EditDatabaseBaseInfoComponent = ({
               onChange={handleTypeChange}
               options={databaseTypeOptions}
               size="small"
-              className="w-[200px] grow"
+              className="w-[150px] grow md:w-[200px]"
             />
 
             <img
