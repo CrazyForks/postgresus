@@ -29,6 +29,7 @@ type EnvVariables struct {
 	MariadbInstallDir    string            `env:"MARIADB_INSTALL_DIR"`
 	MongodbInstallDir    string            `env:"MONGODB_INSTALL_DIR"`
 
+	IsCloud       bool   `env:"IS_CLOUD"`
 	TestLocalhost string `env:"TEST_LOCALHOST"`
 
 	ShowDbInstallationVerificationLogs bool `env:"SHOW_DB_INSTALLATION_VERIFICATION_LOGS"`
@@ -180,6 +181,11 @@ func loadEnvVariables() {
 	// Set default value for IsSkipExternalTests if not defined
 	if os.Getenv("IS_SKIP_EXTERNAL_RESOURCES_TESTS") == "" {
 		env.IsSkipExternalResourcesTests = false
+	}
+
+	// Set default value for IsCloud if not defined
+	if os.Getenv("IS_CLOUD") == "" {
+		env.IsCloud = false
 	}
 
 	for _, arg := range os.Args {

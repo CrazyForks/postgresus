@@ -4,10 +4,13 @@ import { useEffect, useState } from 'react';
 import { GOOGLE_DRIVE_OAUTH_REDIRECT_URL } from '../constants';
 import { type Storage, StorageType } from '../entity/storages';
 import type { StorageOauthDto } from '../entity/storages/models/StorageOauthDto';
+import type { UserProfile } from '../entity/users';
+import { userApi } from '../entity/users';
 import { EditStorageComponent } from '../features/storages/ui/edit/EditStorageComponent';
 
 export function OauthStorageComponent() {
   const [storage, setStorage] = useState<Storage | undefined>();
+  const [user, setUser] = useState<UserProfile | undefined>();
 
   const exchangeGoogleOauthCode = async (oauthDto: StorageOauthDto) => {
     if (!oauthDto.storage.googleDriveStorage) {
@@ -73,6 +76,13 @@ export function OauthStorageComponent() {
   };
 
   useEffect(() => {
+    userApi
+      .getCurrentUser()
+      .then(setUser)
+      .catch(() => {
+        window.location.href = '/';
+      });
+
     const urlParams = new URLSearchParams(window.location.search);
 
     // Attempt 1: Check for the 'oauthDto' param (Third-party/Legacy way)
@@ -116,7 +126,7 @@ export function OauthStorageComponent() {
     alert('OAuth param not found. Ensure the redirect URL is configured correctly.');
   }, []);
 
-  if (!storage) {
+  if (!storage || !user) {
     return (
       <div className="mt-20 flex justify-center">
         <Spin />
@@ -140,6 +150,7 @@ export function OauthStorageComponent() {
 
         <EditStorageComponent
           workspaceId={storage.workspaceId}
+          user={user}
           isShowClose={false}
           onClose={() => {}}
           isShowName={false}

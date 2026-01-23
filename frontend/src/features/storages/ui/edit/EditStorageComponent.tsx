@@ -1,12 +1,15 @@
-import { Button, Input, Select } from 'antd';
+import { InfoCircleOutlined } from '@ant-design/icons';
+import { Button, Input, Select, Switch, Tooltip } from 'antd';
 import { useEffect, useState } from 'react';
 
+import { IS_CLOUD } from '../../../../constants';
 import {
   type Storage,
   StorageType,
   getStorageLogoFromType,
   storageApi,
 } from '../../../../entity/storages';
+import { type UserProfile, UserRole } from '../../../../entity/users';
 import { ToastHelper } from '../../../../shared/toast';
 import { EditAzureBlobStorageComponent } from './storages/EditAzureBlobStorageComponent';
 import { EditFTPStorageComponent } from './storages/EditFTPStorageComponent';
@@ -26,6 +29,8 @@ interface Props {
 
   editingStorage?: Storage;
   onChanged: (storage: Storage) => void;
+
+  user: UserProfile;
 }
 
 export function EditStorageComponent({
@@ -35,6 +40,7 @@ export function EditStorageComponent({
   isShowName,
   editingStorage,
   onChanged,
+  user,
 }: Props) {
   const [storage, setStorage] = useState<Storage | undefined>();
   const [isUnsaved, setIsUnsaved] = useState(false);
@@ -188,6 +194,7 @@ export function EditStorageComponent({
             workspaceId,
             name: '',
             type: StorageType.LOCAL,
+            isSystem: false,
             localStorage: {},
           },
     );
@@ -356,6 +363,31 @@ export function EditStorageComponent({
           <img src={getStorageLogoFromType(storage?.type)} className="ml-2 h-4 w-4" />
         </div>
       </div>
+
+      {IS_CLOUD && user.role === UserRole.ADMIN && (
+        <div className="mb-1 flex w-full flex-col items-start sm:flex-row sm:items-center">
+          <div className="mb-1 min-w-[110px] sm:mb-0">Is system?</div>
+
+          <div className="flex items-center">
+            <Switch
+              checked={storage?.isSystem || false}
+              disabled={!!storage?.id && storage?.isSystem}
+              onChange={(checked) => {
+                setStorage({ ...storage, isSystem: checked });
+                setIsUnsaved(true);
+              }}
+              size="small"
+            />
+
+            <Tooltip
+              className="cursor-pointer"
+              title="System storage is accessible by all workspaces in this instance. Regular storage is only accessible by the current workspace."
+            >
+              <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
+            </Tooltip>
+          </div>
+        </div>
+      )}
 
       <div className="mt-5" />
 

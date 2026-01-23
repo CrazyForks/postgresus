@@ -33,4 +33,10 @@ var (
 	ErrStorageHasOtherAttachedDatabasesCannotTransfer = errors.New(
 		"storage has other attached databases and cannot be transferred",
 	)
+	ErrSystemStorageCannotBeTransferred = errors.New(
+		"system storage cannot be transferred between workspaces",
+	)
+	ErrSystemStorageCannotBeMadePrivate = errors.New(
+		"system storage cannot be changed to non-system",
+	)
 )

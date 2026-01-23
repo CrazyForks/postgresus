@@ -47,3 +47,36 @@ func (p Period) ToDuration() time.Duration {
 		panic("unknown period: " + string(p))
 	}
 }
+
+// CompareTo compares this period with another and returns:
+// -1 if p < other
+//
+//	0 if p == other
+//	1 if p > other
+//
+// FOREVER is treated as the longest period
+func (p Period) CompareTo(other Period) int {
+	if p == other {
+		return 0
+	}
+
+	d1 := p.ToDuration()
+	d2 := other.ToDuration()
+
+	// FOREVER has duration 0, but should be treated as longest period
+	if p == PeriodForever {
+		return 1
+	}
+	if other == PeriodForever {
+		return -1
+	}
+
+	if d1 < d2 {
+		return -1
+	}
+	if d1 > d2 {
+		return 1
+	}
+
+	return 0
+}

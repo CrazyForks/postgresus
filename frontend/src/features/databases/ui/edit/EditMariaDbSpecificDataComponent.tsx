@@ -2,6 +2,7 @@ import { CopyOutlined, DownOutlined, InfoCircleOutlined, UpOutlined } from '@ant
 import { App, Button, Checkbox, Input, InputNumber, Switch, Tooltip } from 'antd';
 import { useEffect, useState } from 'react';
 
+import { IS_CLOUD } from '../../../../constants';
 import { type Database, databaseApi } from '../../../../entity/databases';
 import { MariadbConnectionStringParser } from '../../../../entity/databases/model/mariadb/MariadbConnectionStringParser';
 import { ToastHelper } from '../../../../shared/toast';
@@ -199,7 +200,7 @@ export const EditMariaDbSpecificDataComponent = ({
         />
       </div>
 
-      {isLocalhostDb && (
+      {isLocalhostDb && !IS_CLOUD && (
         <div className="mb-1 flex">
           <div className="min-w-[150px]" />
           <div className="max-w-[200px] text-xs text-gray-500 dark:text-gray-400">

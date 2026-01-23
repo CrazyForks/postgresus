@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	audit_logs "databasus-backend/internal/features/audit_logs"
+	users_enums "databasus-backend/internal/features/users/enums"
 	users_models "databasus-backend/internal/features/users/models"
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
 	"databasus-backend/internal/util/encryption"
@@ -38,6 +39,11 @@ func (s *StorageService) SaveStorage(
 
 	isUpdate := storage.ID != uuid.Nil
 
+	if storage.IsSystem && user.Role != users_enums.UserRoleAdmin {
+		// only admin can manage system storage
+		return ErrInsufficientPermissionsToManageStorage
+	}
+
 	if isUpdate {
 		existingStorage, err := s.storageRepository.FindByID(storage.ID)
 		if err != nil {
@@ -46,6 +52,10 @@ func (s *StorageService) SaveStorage(
 
 		if existingStorage.WorkspaceID != workspaceID {
 			return ErrStorageDoesNotBelongToWorkspace
+		}
+
+		if existingStorage.IsSystem && !storage.IsSystem {
+			return ErrSystemStorageCannotBeMadePrivate
 		}
 
 		existingStorage.Update(storage)
@@ -111,6 +121,11 @@ func (s *StorageService) DeleteStorage(
 		return ErrInsufficientPermissionsToManageStorage
 	}
 
+	if storage.IsSystem && user.Role != users_enums.UserRoleAdmin {
+		// only admin can manage system storage
+		return ErrInsufficientPermissionsToManageStorage
+	}
+
 	attachedDatabasesIDs, err := s.storageDatabaseCounter.GetStorageAttachedDatabasesIDs(storage.ID)
 	if err != nil {
 		return err
@@ -142,15 +157,21 @@ func (s *StorageService) GetStorage(
 		return nil, err
 	}
 
-	canView, _, err := s.workspaceService.CanUserAccessWorkspace(storage.WorkspaceID, user)
-	if err != nil {
-		return nil, err
-	}
-	if !canView {
-		return nil, ErrInsufficientPermissionsToViewStorage
+	if !storage.IsSystem {
+		canView, _, err := s.workspaceService.CanUserAccessWorkspace(storage.WorkspaceID, user)
+		if err != nil {
+			return nil, err
+		}
+		if !canView {
+			return nil, ErrInsufficientPermissionsToViewStorage
+		}
 	}
 
 	storage.HideSensitiveData()
+
+	if storage.IsSystem && user.Role != users_enums.UserRoleAdmin {
+		storage.HideAllData()
+	}
 
 	return storage, nil
 }
@@ -174,6 +195,10 @@ func (s *StorageService) GetStorages(
 
 	for _, storage := range storages {
 		storage.HideSensitiveData()
+
+		if storage.IsSystem && user.Role != users_enums.UserRoleAdmin {
+			storage.HideAllData()
+		}
 	}
 
 	return storages, nil
@@ -256,6 +281,10 @@ func (s *StorageService) TransferStorageToWorkspace(
 	existingStorage, err := s.storageRepository.FindByID(storageID)
 	if err != nil {
 		return err
+	}
+
+	if existingStorage.IsSystem {
+		return ErrSystemStorageCannotBeTransferred
 	}
 
 	canManageSource, err := s.workspaceService.CanUserManageDBs(existingStorage.WorkspaceID, user)

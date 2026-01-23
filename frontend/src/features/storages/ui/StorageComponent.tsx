@@ -11,6 +11,7 @@ import { useEffect } from 'react';
 import { backupConfigApi } from '../../../entity/backups';
 import { storageApi } from '../../../entity/storages';
 import type { Storage } from '../../../entity/storages';
+import { type UserProfile, UserRole } from '../../../entity/users';
 import { ToastHelper } from '../../../shared/toast';
 import { ConfirmationComponent } from '../../../shared/ui';
 import { StorageTransferDialogComponent } from './StorageTransferDialogComponent';
@@ -23,6 +24,7 @@ interface Props {
   onStorageDeleted: () => void;
   onStorageTransferred: () => void;
   isCanManageStorages: boolean;
+  user: UserProfile;
 }
 
 export const StorageComponent = ({
@@ -31,6 +33,7 @@ export const StorageComponent = ({
   onStorageDeleted,
   onStorageTransferred,
   isCanManageStorages,
+  user,
 }: Props) => {
   const [storage, setStorage] = useState<Storage | undefined>();
 
@@ -142,11 +145,12 @@ export const StorageComponent = ({
             {!isEditName ? (
               <div className="mb-5 flex items-center text-2xl font-bold">
                 {storage.name}
-                {isCanManageStorages && (
-                  <div className="ml-2 cursor-pointer" onClick={() => startEdit('name')}>
-                    <img src="/icons/pen-gray.svg" />
-                  </div>
-                )}
+                {(storage.isSystem && user.role === UserRole.ADMIN) ||
+                  (isCanManageStorages && (
+                    <div className="ml-2 cursor-pointer" onClick={() => startEdit('name')}>
+                      <img src="/icons/pen-gray.svg" />
+                    </div>
+                  ))}
               </div>
             ) : (
               <div>
@@ -219,7 +223,9 @@ export const StorageComponent = ({
             <div className="mt-5 flex items-center font-bold">
               <div>Storage settings</div>
 
-              {!isEditSettings && isCanManageStorages ? (
+              {!isEditSettings &&
+              isCanManageStorages &&
+              !(storage.isSystem && user.role !== UserRole.ADMIN) ? (
                 <div className="ml-2 h-4 w-4 cursor-pointer" onClick={() => startEdit('settings')}>
                   <img src="/icons/pen-gray.svg" />
                 </div>
@@ -241,9 +247,10 @@ export const StorageComponent = ({
                   isShowName={false}
                   editingStorage={storage}
                   onChanged={onStorageChanged}
+                  user={user}
                 />
               ) : (
-                <ShowStorageComponent storage={storage} />
+                <ShowStorageComponent storage={storage} user={user} />
               )}
             </div>
 
@@ -261,23 +268,27 @@ export const StorageComponent = ({
 
                 {isCanManageStorages && (
                   <>
-                    <Button
-                      type="primary"
-                      ghost
-                      icon={<ArrowRightOutlined />}
-                      onClick={() => setIsShowTransferDialog(true)}
-                      className="mr-1"
-                    />
+                    {!storage.isSystem && (
+                      <Button
+                        type="primary"
+                        ghost
+                        icon={<ArrowRightOutlined />}
+                        onClick={() => setIsShowTransferDialog(true)}
+                        className="mr-1"
+                      />
+                    )}
 
-                    <Button
-                      type="primary"
-                      ghost
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => setIsShowRemoveConfirm(true)}
-                      loading={isRemoving}
-                      disabled={isRemoving}
-                    />
+                    {!(storage.isSystem && user.role !== UserRole.ADMIN) && (
+                      <Button
+                        type="primary"
+                        ghost
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={() => setIsShowRemoveConfirm(true)}
+                        loading={isRemoving}
+                        disabled={isRemoving}
+                      />
+                    )}
                   </>
                 )}
               </div>

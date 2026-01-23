@@ -6,3 +6,4 @@ export type { BackupConfig } from './model/BackupConfig';
 export { BackupNotificationType } from './model/BackupNotificationType';
 export { BackupEncryption } from './model/BackupEncryption';
 export type { TransferDatabaseRequest } from './model/TransferDatabaseRequest';
+export type { DatabasePlan } from '../plan';

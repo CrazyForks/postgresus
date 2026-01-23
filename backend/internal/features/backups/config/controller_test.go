@@ -16,11 +16,14 @@ import (
 	"databasus-backend/internal/features/databases/databases/postgresql"
 	"databasus-backend/internal/features/intervals"
 	"databasus-backend/internal/features/notifiers"
+	plans "databasus-backend/internal/features/plan"
 	"databasus-backend/internal/features/storages"
+	local_storage "databasus-backend/internal/features/storages/models/local"
 	users_enums "databasus-backend/internal/features/users/enums"
 	users_testing "databasus-backend/internal/features/users/testing"
 	workspaces_controllers "databasus-backend/internal/features/workspaces/controllers"
 	workspaces_testing "databasus-backend/internal/features/workspaces/testing"
+	"databasus-backend/internal/storage"
 	"databasus-backend/internal/util/period"
 	test_utils "databasus-backend/internal/util/testing"
 	"databasus-backend/internal/util/tools"
@@ -300,12 +303,202 @@ func Test_GetBackupConfigByDbID_ReturnsDefaultConfigForNewDatabase(t *testing.T)
 		&response,
 	)
 
+	var plan plans.DatabasePlan
+
+	test_utils.MakeGetRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/backup-configs/database/"+database.ID.String()+"/plan",
+		"Bearer "+owner.Token,
+		http.StatusOK,
+		&plan,
+	)
+
 	assert.Equal(t, database.ID, response.DatabaseID)
 	assert.False(t, response.IsBackupsEnabled)
-	assert.Equal(t, period.PeriodWeek, response.StorePeriod)
+	assert.Equal(t, plan.MaxStoragePeriod, response.StorePeriod)
+	assert.Equal(t, plan.MaxBackupSizeMB, response.MaxBackupSizeMB)
+	assert.Equal(t, plan.MaxBackupsTotalSizeMB, response.MaxBackupsTotalSizeMB)
 	assert.True(t, response.IsRetryIfFailed)
 	assert.Equal(t, 3, response.MaxFailedTriesCount)
 	assert.NotNil(t, response.BackupInterval)
+}
+
+func Test_GetDatabasePlan_ForNewDatabase_PlanAlwaysReturned(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+
+	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
+
+	var response plans.DatabasePlan
+	test_utils.MakeGetRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/backup-configs/database/"+database.ID.String()+"/plan",
+		"Bearer "+owner.Token,
+		http.StatusOK,
+		&response,
+	)
+
+	assert.Equal(t, database.ID, response.DatabaseID)
+	assert.NotNil(t, response.MaxBackupSizeMB)
+	assert.NotNil(t, response.MaxBackupsTotalSizeMB)
+	assert.NotEmpty(t, response.MaxStoragePeriod)
+}
+
+func Test_SaveBackupConfig_WhenPlanLimitsAreAdjusted_ValidationEnforced(t *testing.T) {
+	router := createTestRouter()
+	owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+
+	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
+
+	// Get plan via API (triggers auto-creation)
+	var plan plans.DatabasePlan
+	test_utils.MakeGetRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/backup-configs/database/"+database.ID.String()+"/plan",
+		"Bearer "+owner.Token,
+		http.StatusOK,
+		&plan,
+	)
+
+	assert.Equal(t, database.ID, plan.DatabaseID)
+
+	// Adjust plan limits directly in database to fixed restrictive values
+	err := storage.GetDb().Model(&plans.DatabasePlan{}).
+		Where("database_id = ?", database.ID).
+		Updates(map[string]any{
+			"max_backup_size_mb":        100,
+			"max_backups_total_size_mb": 1000,
+			"max_storage_period":        period.PeriodMonth,
+		}).Error
+	assert.NoError(t, err)
+
+	// Test 1: Try to save backup config with exceeded backup size limit
+	timeOfDay := "04:00"
+	backupConfigExceededSize := BackupConfig{
+		DatabaseID:       database.ID,
+		IsBackupsEnabled: true,
+		StorePeriod:      period.PeriodWeek,
+		BackupInterval: &intervals.Interval{
+			Interval:  intervals.IntervalDaily,
+			TimeOfDay: &timeOfDay,
+		},
+		SendNotificationsOn: []BackupNotificationType{
+			NotificationBackupFailed,
+		},
+		IsRetryIfFailed:       true,
+		MaxFailedTriesCount:   3,
+		Encryption:            BackupEncryptionNone,
+		MaxBackupSizeMB:       200, // Exceeds limit of 100
+		MaxBackupsTotalSizeMB: 800,
+	}
+
+	respExceededSize := test_utils.MakePostRequest(
+		t,
+		router,
+		"/api/v1/backup-configs/save",
+		"Bearer "+owner.Token,
+		backupConfigExceededSize,
+		http.StatusBadRequest,
+	)
+	assert.Contains(t, string(respExceededSize.Body), "max backup size exceeds plan limit")
+
+	// Test 2: Try to save backup config with exceeded total size limit
+	backupConfigExceededTotal := BackupConfig{
+		DatabaseID:       database.ID,
+		IsBackupsEnabled: true,
+		StorePeriod:      period.PeriodWeek,
+		BackupInterval: &intervals.Interval{
+			Interval:  intervals.IntervalDaily,
+			TimeOfDay: &timeOfDay,
+		},
+		SendNotificationsOn: []BackupNotificationType{
+			NotificationBackupFailed,
+		},
+		IsRetryIfFailed:       true,
+		MaxFailedTriesCount:   3,
+		Encryption:            BackupEncryptionNone,
+		MaxBackupSizeMB:       50,
+		MaxBackupsTotalSizeMB: 2000, // Exceeds limit of 1000
+	}
+
+	respExceededTotal := test_utils.MakePostRequest(
+		t,
+		router,
+		"/api/v1/backup-configs/save",
+		"Bearer "+owner.Token,
+		backupConfigExceededTotal,
+		http.StatusBadRequest,
+	)
+	assert.Contains(t, string(respExceededTotal.Body), "max total backups size exceeds plan limit")
+
+	// Test 3: Try to save backup config with exceeded storage period limit
+	backupConfigExceededPeriod := BackupConfig{
+		DatabaseID:       database.ID,
+		IsBackupsEnabled: true,
+		StorePeriod:      period.PeriodYear, // Exceeds limit of Month
+		BackupInterval: &intervals.Interval{
+			Interval:  intervals.IntervalDaily,
+			TimeOfDay: &timeOfDay,
+		},
+		SendNotificationsOn: []BackupNotificationType{
+			NotificationBackupFailed,
+		},
+		IsRetryIfFailed:       true,
+		MaxFailedTriesCount:   3,
+		Encryption:            BackupEncryptionNone,
+		MaxBackupSizeMB:       80,
+		MaxBackupsTotalSizeMB: 800,
+	}
+
+	respExceededPeriod := test_utils.MakePostRequest(
+		t,
+		router,
+		"/api/v1/backup-configs/save",
+		"Bearer "+owner.Token,
+		backupConfigExceededPeriod,
+		http.StatusBadRequest,
+	)
+	assert.Contains(t, string(respExceededPeriod.Body), "storage period exceeds plan limit")
+
+	// Test 4: Save backup config within all limits - should succeed
+	backupConfigValid := BackupConfig{
+		DatabaseID:       database.ID,
+		IsBackupsEnabled: true,
+		StorePeriod:      period.PeriodWeek, // Within Month limit
+		BackupInterval: &intervals.Interval{
+			Interval:  intervals.IntervalDaily,
+			TimeOfDay: &timeOfDay,
+		},
+		SendNotificationsOn: []BackupNotificationType{
+			NotificationBackupFailed,
+		},
+		IsRetryIfFailed:       true,
+		MaxFailedTriesCount:   3,
+		Encryption:            BackupEncryptionNone,
+		MaxBackupSizeMB:       80,  // Within 100 limit
+		MaxBackupsTotalSizeMB: 800, // Within 1000 limit
+	}
+
+	var responseValid BackupConfig
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/backup-configs/save",
+		"Bearer "+owner.Token,
+		backupConfigValid,
+		http.StatusOK,
+		&responseValid,
+	)
+
+	assert.Equal(t, database.ID, responseValid.DatabaseID)
+	assert.Equal(t, int64(80), responseValid.MaxBackupSizeMB)
+	assert.Equal(t, int64(800), responseValid.MaxBackupsTotalSizeMB)
+	assert.Equal(t, period.PeriodWeek, responseValid.StorePeriod)
 }
 
 func Test_IsStorageUsing_PermissionsEnforced(t *testing.T) {
@@ -1441,6 +1634,110 @@ func Test_TransferDatabase_TargetStorageFromDifferentWorkspace_ReturnsBadRequest
 	)
 
 	assert.Contains(t, string(testResp.Body), "target storage does not belong to target workspace")
+}
+
+func Test_SaveBackupConfig_WithSystemStorage_CanBeUsedByAnyDatabase(t *testing.T) {
+	router := createTestRouterWithStorageForTransfer()
+
+	owner1 := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	owner2 := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	admin := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+
+	workspaceA := workspaces_testing.CreateTestWorkspace("Workspace A", owner1, router)
+	workspaceB := workspaces_testing.CreateTestWorkspace("Workspace B", owner2, router)
+
+	databaseA := createTestDatabaseViaAPI("Database A", workspaceA.ID, owner1.Token, router)
+
+	// Test 1: Regular storage from workspace B cannot be used by database in workspace A
+	regularStorageB := createTestStorage(workspaceB.ID)
+
+	timeOfDay := "04:00"
+	backupConfigWithRegularStorage := BackupConfig{
+		DatabaseID:       databaseA.ID,
+		IsBackupsEnabled: true,
+		StorePeriod:      period.PeriodWeek,
+		BackupInterval: &intervals.Interval{
+			Interval:  intervals.IntervalDaily,
+			TimeOfDay: &timeOfDay,
+		},
+		StorageID: &regularStorageB.ID,
+		Storage:   regularStorageB,
+		SendNotificationsOn: []BackupNotificationType{
+			NotificationBackupFailed,
+		},
+		IsRetryIfFailed:     true,
+		MaxFailedTriesCount: 3,
+		Encryption:          BackupEncryptionNone,
+	}
+
+	respRegular := test_utils.MakePostRequest(
+		t,
+		router,
+		"/api/v1/backup-configs/save",
+		"Bearer "+owner1.Token,
+		backupConfigWithRegularStorage,
+		http.StatusBadRequest,
+	)
+
+	assert.Contains(t, string(respRegular.Body), "storage does not belong to the same workspace")
+
+	// Test 2: System storage from workspace B CAN be used by database in workspace A
+	systemStorageB := &storages.Storage{
+		WorkspaceID:  workspaceB.ID,
+		Type:         storages.StorageTypeLocal,
+		Name:         "Test System Storage " + uuid.New().String(),
+		IsSystem:     true,
+		LocalStorage: &local_storage.LocalStorage{},
+	}
+
+	var savedSystemStorage storages.Storage
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/storages",
+		"Bearer "+admin.Token,
+		*systemStorageB,
+		http.StatusOK,
+		&savedSystemStorage,
+	)
+
+	assert.True(t, savedSystemStorage.IsSystem)
+
+	backupConfigWithSystemStorage := BackupConfig{
+		DatabaseID:       databaseA.ID,
+		IsBackupsEnabled: true,
+		StorePeriod:      period.PeriodWeek,
+		BackupInterval: &intervals.Interval{
+			Interval:  intervals.IntervalDaily,
+			TimeOfDay: &timeOfDay,
+		},
+		StorageID: &savedSystemStorage.ID,
+		Storage:   &savedSystemStorage,
+		SendNotificationsOn: []BackupNotificationType{
+			NotificationBackupFailed,
+		},
+		IsRetryIfFailed:     true,
+		MaxFailedTriesCount: 3,
+		Encryption:          BackupEncryptionNone,
+	}
+
+	var savedConfig BackupConfig
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/backup-configs/save",
+		"Bearer "+owner1.Token,
+		backupConfigWithSystemStorage,
+		http.StatusOK,
+		&savedConfig,
+	)
+
+	assert.Equal(t, databaseA.ID, savedConfig.DatabaseID)
+	assert.NotNil(t, savedConfig.StorageID)
+	assert.Equal(t, savedSystemStorage.ID, *savedConfig.StorageID)
+	assert.True(t, savedConfig.IsBackupsEnabled)
+
+	storages.RemoveTestStorage(regularStorageB.ID)
 }
 
 func createTestDatabaseViaAPI(

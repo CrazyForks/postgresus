@@ -6,10 +6,10 @@ import (
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/intervals"
 	"databasus-backend/internal/features/notifiers"
+	plans "databasus-backend/internal/features/plan"
 	"databasus-backend/internal/features/storages"
 	users_models "databasus-backend/internal/features/users/models"
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
-	"databasus-backend/internal/util/period"
 
 	"github.com/google/uuid"
 )
@@ -20,6 +20,7 @@ type BackupConfigService struct {
 	storageService         *storages.StorageService
 	notifierService        *notifiers.NotifierService
 	workspaceService       *workspaces_services.WorkspaceService
+	databasePlanService    *plans.DatabasePlanService
 
 	dbStorageChangeListener BackupConfigStorageChangeListener
 }
@@ -45,7 +46,12 @@ func (s *BackupConfigService) SaveBackupConfigWithAuth(
 	user *users_models.User,
 	backupConfig *BackupConfig,
 ) (*BackupConfig, error) {
-	if err := backupConfig.Validate(); err != nil {
+	plan, err := s.databasePlanService.GetDatabasePlan(backupConfig.DatabaseID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := backupConfig.Validate(plan); err != nil {
 		return nil, err
 	}
 
@@ -71,7 +77,7 @@ func (s *BackupConfigService) SaveBackupConfigWithAuth(
 		if err != nil {
 			return nil, err
 		}
-		if storage.WorkspaceID != *database.WorkspaceID {
+		if storage.WorkspaceID != *database.WorkspaceID && !storage.IsSystem {
 			return nil, errors.New("storage does not belong to the same workspace as the database")
 		}
 	}
@@ -82,7 +88,12 @@ func (s *BackupConfigService) SaveBackupConfigWithAuth(
 func (s *BackupConfigService) SaveBackupConfig(
 	backupConfig *BackupConfig,
 ) (*BackupConfig, error) {
-	if err := backupConfig.Validate(); err != nil {
+	plan, err := s.databasePlanService.GetDatabasePlan(backupConfig.DatabaseID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := backupConfig.Validate(plan); err != nil {
 		return nil, err
 	}
 
@@ -118,6 +129,18 @@ func (s *BackupConfigService) GetBackupConfigByDbIdWithAuth(
 	}
 
 	return s.GetBackupConfigByDbId(databaseID)
+}
+
+func (s *BackupConfigService) GetDatabasePlan(
+	user *users_models.User,
+	databaseID uuid.UUID,
+) (*plans.DatabasePlan, error) {
+	_, err := s.databaseService.GetDatabase(user, databaseID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.databasePlanService.GetDatabasePlan(databaseID)
 }
 
 func (s *BackupConfigService) GetBackupConfigByDbId(
@@ -194,12 +217,19 @@ func (s *BackupConfigService) CreateDisabledBackupConfig(databaseID uuid.UUID) e
 func (s *BackupConfigService) initializeDefaultConfig(
 	databaseID uuid.UUID,
 ) error {
+	plan, err := s.databasePlanService.GetDatabasePlan(databaseID)
+	if err != nil {
+		return err
+	}
+
 	timeOfDay := "04:00"
 
-	_, err := s.backupConfigRepository.Save(&BackupConfig{
-		DatabaseID:       databaseID,
-		IsBackupsEnabled: false,
-		StorePeriod:      period.PeriodWeek,
+	_, err = s.backupConfigRepository.Save(&BackupConfig{
+		DatabaseID:            databaseID,
+		IsBackupsEnabled:      false,
+		StorePeriod:           plan.MaxStoragePeriod,
+		MaxBackupSizeMB:       plan.MaxBackupSizeMB,
+		MaxBackupsTotalSizeMB: plan.MaxBackupsTotalSizeMB,
 		BackupInterval: &intervals.Interval{
 			Interval:  intervals.IntervalDaily,
 			TimeOfDay: &timeOfDay,

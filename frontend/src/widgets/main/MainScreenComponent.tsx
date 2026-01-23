@@ -14,6 +14,7 @@ import {
 import { type WorkspaceResponse, workspaceApi } from '../../entity/workspaces';
 import { DatabasesComponent } from '../../features/databases/ui/DatabasesComponent';
 import { NotifiersComponent } from '../../features/notifiers/ui/NotifiersComponent';
+import { PlaygroundWarningComponent } from '../../features/playground';
 import { SettingsComponent } from '../../features/settings';
 import { StoragesComponent } from '../../features/storages/ui/StoragesComponent';
 import { ProfileComponent } from '../../features/users';
@@ -261,7 +262,7 @@ export const MainScreenComponent = () => {
         </div>
       </div>
 
-      {isLoading ? (
+      {isLoading || !user ? (
         <div className="flex items-center justify-center py-2" style={{ height: contentHeight }}>
           <Spin indicator={<LoadingOutlined spin />} size="large" />
         </div>
@@ -329,6 +330,7 @@ export const MainScreenComponent = () => {
                     )}
                     {selectedTab === 'storages' && selectedWorkspace && (
                       <StoragesComponent
+                        user={user}
                         contentHeight={contentHeight}
                         workspace={selectedWorkspace}
                         isCanManageStorages={isCanManageDBs}
@@ -339,6 +341,7 @@ export const MainScreenComponent = () => {
                       <DatabasesComponent
                         contentHeight={contentHeight}
                         workspace={selectedWorkspace}
+                        user={user}
                         isCanManageDBs={isCanManageDBs}
                         key={`databases-${selectedWorkspace.id}`}
                       />
@@ -376,6 +379,8 @@ export const MainScreenComponent = () => {
           workspacesCount={workspaces.length}
         />
       )}
+
+      <PlaygroundWarningComponent />
     </div>
   );
 };

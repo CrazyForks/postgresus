@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import { useEffect } from 'react';
 
 import { type Database, databaseApi } from '../../../entity/databases';
+import type { UserProfile } from '../../../entity/users';
 import { BackupsComponent } from '../../backups';
 import { HealthckeckAttemptsComponent } from '../../healthcheck';
 import { DatabaseConfigComponent } from './DatabaseConfigComponent';
@@ -10,6 +11,7 @@ import { DatabaseConfigComponent } from './DatabaseConfigComponent';
 interface Props {
   contentHeight: number;
   databaseId: string;
+  user: UserProfile;
   onDatabaseChanged: (database: Database) => void;
   onDatabaseDeleted: () => void;
   isCanManageDBs: boolean;
@@ -18,6 +20,7 @@ interface Props {
 export const DatabaseComponent = ({
   contentHeight,
   databaseId,
+  user,
   onDatabaseChanged,
   onDatabaseDeleted,
   isCanManageDBs,
@@ -68,6 +71,7 @@ export const DatabaseComponent = ({
       {currentTab === 'config' && (
         <DatabaseConfigComponent
           database={database}
+          user={user}
           setDatabase={setDatabase}
           onDatabaseChanged={onDatabaseChanged}
           onDatabaseDeleted={onDatabaseDeleted}

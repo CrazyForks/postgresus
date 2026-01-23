@@ -1,6 +1,7 @@
 package databases
 
 import (
+	"context"
 	"databasus-backend/internal/features/databases/databases/mariadb"
 	"databasus-backend/internal/features/databases/databases/mongodb"
 	"databasus-backend/internal/features/databases/databases/mysql"
@@ -82,6 +83,25 @@ func (d *Database) TestConnection(
 	encryptor encryption.FieldEncryptor,
 ) error {
 	return d.getSpecificDatabase().TestConnection(logger, encryptor, d.ID)
+}
+
+func (d *Database) IsUserReadOnly(
+	ctx context.Context,
+	logger *slog.Logger,
+	encryptor encryption.FieldEncryptor,
+) (bool, []string, error) {
+	switch d.Type {
+	case DatabaseTypePostgres:
+		return d.Postgresql.IsUserReadOnly(ctx, logger, encryptor, d.ID)
+	case DatabaseTypeMysql:
+		return d.Mysql.IsUserReadOnly(ctx, logger, encryptor, d.ID)
+	case DatabaseTypeMariadb:
+		return d.Mariadb.IsUserReadOnly(ctx, logger, encryptor, d.ID)
+	case DatabaseTypeMongodb:
+		return d.Mongodb.IsUserReadOnly(ctx, logger, encryptor, d.ID)
+	default:
+		return false, nil, errors.New("read-only check not supported for this database type")
+	}
 }
 
 func (d *Database) HideSensitiveData() {

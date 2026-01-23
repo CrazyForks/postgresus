@@ -251,6 +251,18 @@ fi
 # PostgreSQL 17 binary paths
 PG_BIN="/usr/lib/postgresql/17/bin"
 
+# Generate runtime configuration for frontend
+echo "Generating runtime configuration..."
+cat > /app/ui/build/runtime-config.js << 'JSEOF'
+// Runtime configuration injected at container startup
+// This file is generated dynamically and should not be edited manually
+window.__RUNTIME_CONFIG__ = {
+  IS_CLOUD: '\${IS_CLOUD:-false}',
+  GITHUB_CLIENT_ID: '\${GITHUB_CLIENT_ID:-}',
+  GOOGLE_CLIENT_ID: '\${GOOGLE_CLIENT_ID:-}'
+};
+JSEOF
+
 # Ensure proper ownership of data directory
 echo "Setting up data directory permissions..."
 mkdir -p /databasus-data/pgdata

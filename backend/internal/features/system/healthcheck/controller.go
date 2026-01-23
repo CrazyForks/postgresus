@@ -23,6 +23,18 @@ func (c *HealthcheckController) RegisterRoutes(router *gin.RouterGroup) {
 // @Failure 503 {object} HealthcheckResponse
 // @Router /system/health [get]
 func (c *HealthcheckController) CheckHealth(ctx *gin.Context) {
+	// Allow unrestricted CORS for health check endpoint
+	// This enables monitoring tools from any origin to check system health
+	ctx.Header("Access-Control-Allow-Origin", "*")
+	ctx.Header("Access-Control-Allow-Methods", "GET, OPTIONS")
+	ctx.Header("Access-Control-Allow-Headers", "Content-Type")
+
+	// Handle preflight OPTIONS request
+	if ctx.Request.Method == "OPTIONS" {
+		ctx.AbortWithStatus(http.StatusNoContent)
+		return
+	}
+
 	err := c.healthcheckService.IsHealthy()
 
 	if err == nil {

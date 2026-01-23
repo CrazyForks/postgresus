@@ -1,7 +1,9 @@
 package backups_config
 
 import (
+	"databasus-backend/internal/config"
 	"databasus-backend/internal/features/intervals"
+	plans "databasus-backend/internal/features/plan"
 	"databasus-backend/internal/features/storages"
 	"databasus-backend/internal/util/period"
 	"errors"
@@ -75,7 +77,7 @@ func (b *BackupConfig) AfterFind(tx *gorm.DB) error {
 	return nil
 }
 
-func (b *BackupConfig) Validate() error {
+func (b *BackupConfig) Validate(plan *plans.DatabasePlan) error {
 	// Backup interval is required either as ID or as object
 	if b.BackupIntervalID == uuid.Nil && b.BackupInterval == nil {
 		return errors.New("backup interval is required")
@@ -94,12 +96,41 @@ func (b *BackupConfig) Validate() error {
 		return errors.New("encryption must be NONE or ENCRYPTED")
 	}
 
+	if config.GetEnv().IsCloud {
+		if b.Encryption != BackupEncryptionEncrypted {
+			return errors.New("encryption is mandatory for cloud storage")
+		}
+	}
+
 	if b.MaxBackupSizeMB < 0 {
 		return errors.New("max backup size must be non-negative")
 	}
 
 	if b.MaxBackupsTotalSizeMB < 0 {
 		return errors.New("max backups total size must be non-negative")
+	}
+
+	// Validate against plan limits
+	// Check storage period limit
+	if plan.MaxStoragePeriod != period.PeriodForever {
+		if b.StorePeriod.CompareTo(plan.MaxStoragePeriod) > 0 {
+			return errors.New("storage period exceeds plan limit")
+		}
+	}
+
+	// Check max backup size limit (0 in plan means unlimited)
+	if plan.MaxBackupSizeMB > 0 {
+		if b.MaxBackupSizeMB == 0 || b.MaxBackupSizeMB > plan.MaxBackupSizeMB {
+			return errors.New("max backup size exceeds plan limit")
+		}
+	}
+
+	// Check max total backups size limit (0 in plan means unlimited)
+	if plan.MaxBackupsTotalSizeMB > 0 {
+		if b.MaxBackupsTotalSizeMB == 0 ||
+			b.MaxBackupsTotalSizeMB > plan.MaxBackupsTotalSizeMB {
+			return errors.New("max total backups size exceeds plan limit")
+		}
 	}
 
 	return nil

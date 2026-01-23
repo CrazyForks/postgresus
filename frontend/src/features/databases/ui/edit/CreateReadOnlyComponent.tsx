@@ -1,6 +1,7 @@
 import { Button, Modal, Spin } from 'antd';
 import { useEffect, useState } from 'react';
 
+import { IS_CLOUD } from '../../../../constants';
 import { type Database, DatabaseType, databaseApi } from '../../../../entity/databases';
 
 interface Props {
@@ -193,9 +194,11 @@ export const CreateReadOnlyComponent = ({
           Back
         </Button>
 
-        <Button className="mr-2 ml-auto" danger ghost onClick={handleSkip}>
-          Skip
-        </Button>
+        {!IS_CLOUD && (
+          <Button className="mr-2 ml-auto" danger ghost onClick={handleSkip}>
+            Skip
+          </Button>
+        )}
 
         <Button
           type="primary"

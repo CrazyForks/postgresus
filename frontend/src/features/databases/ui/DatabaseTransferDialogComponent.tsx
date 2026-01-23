@@ -8,6 +8,7 @@ import { type Database, databaseApi } from '../../../entity/databases';
 import type { Notifier } from '../../../entity/notifiers';
 import { notifierApi } from '../../../entity/notifiers';
 import { type Storage, getStorageLogoFromType, storageApi } from '../../../entity/storages';
+import type { UserProfile } from '../../../entity/users';
 import { type WorkspaceResponse, workspaceApi } from '../../../entity/workspaces';
 import { ToastHelper } from '../../../shared/toast';
 import { EditNotifierComponent } from '../../notifiers/ui/edit/EditNotifierComponent';
@@ -15,6 +16,7 @@ import { EditStorageComponent } from '../../storages/ui/edit/EditStorageComponen
 
 interface Props {
   database: Database;
+  user: UserProfile;
   currentStorageId?: string;
   onClose: () => void;
   onTransferred: () => void;
@@ -28,6 +30,7 @@ interface NotifierUsageInfo {
 
 export const DatabaseTransferDialogComponent = ({
   database,
+  user,
   currentStorageId,
   onClose,
   onTransferred,
@@ -419,6 +422,7 @@ export const DatabaseTransferDialogComponent = ({
 
           <EditStorageComponent
             workspaceId={selectedWorkspaceId}
+            user={user}
             isShowName
             isShowClose={false}
             onClose={() => setIsShowCreateStorage(false)}

@@ -6,6 +6,7 @@ import (
 
 	"databasus-backend/internal/features/databases"
 	"databasus-backend/internal/features/notifiers"
+	plans "databasus-backend/internal/features/plan"
 	"databasus-backend/internal/features/storages"
 	workspaces_services "databasus-backend/internal/features/workspaces/services"
 	"databasus-backend/internal/util/logger"
@@ -18,6 +19,7 @@ var backupConfigService = &BackupConfigService{
 	storages.GetStorageService(),
 	notifiers.GetNotifierService(),
 	workspaces_services.GetWorkspaceService(),
+	plans.GetDatabasePlanService(),
 	nil,
 }
 var backupConfigController = &BackupConfigController{
