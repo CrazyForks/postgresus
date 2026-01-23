@@ -1,8 +1,11 @@
 import { accessTokenHelper } from '.';
+import { IS_CLOUD } from '../../constants';
+import { RateLimiter } from './RateLimiter';
 import RequestOptions from './RequestOptions';
 
-const REPEAT_TRIES_COUNT = 10;
+const REPEAT_TRIES_COUNT = 30;
 const REPEAT_INTERVAL_MS = 3_000;
+const rateLimiter = new RateLimiter(IS_CLOUD ? 5 : 30, 1_000);
 
 const handleOrThrowMessageIfResponseError = async (
   url: string,
@@ -41,6 +44,8 @@ const makeRequest = async (
   optionsWrapper: RequestOptions,
   currentTry = 0,
 ): Promise<Response> => {
+  await rateLimiter.acquire();
+
   try {
     const response = await fetch(url, optionsWrapper.toRequestInit());
     await handleOrThrowMessageIfResponseError(url, response);

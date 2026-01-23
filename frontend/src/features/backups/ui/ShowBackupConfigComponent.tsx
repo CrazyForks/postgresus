@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import { useMemo } from 'react';
 import { useEffect, useState } from 'react';
 
+import { IS_CLOUD } from '../../../constants';
 import { type BackupConfig, BackupEncryption, backupConfigApi } from '../../../entity/backups';
 import { BackupNotificationType } from '../../../entity/backups/model/BackupNotificationType';
 import type { Database } from '../../../entity/databases';
@@ -210,17 +211,21 @@ export const ShowBackupConfigComponent = ({ database }: Props) => {
             </div>
           </div>
 
-          <div className="mb-1 flex w-full items-center">
-            <div className="min-w-[150px]">Encryption</div>
-            <div>{backupConfig.encryption === BackupEncryption.ENCRYPTED ? 'Enabled' : 'None'}</div>
+          {!IS_CLOUD && (
+            <div className="mb-1 flex w-full items-center">
+              <div className="min-w-[150px]">Encryption</div>
+              <div>
+                {backupConfig.encryption === BackupEncryption.ENCRYPTED ? 'Enabled' : 'None'}
+              </div>
 
-            <Tooltip
-              className="cursor-pointer"
-              title="If backup is encrypted, backup files in your storage (S3, local, etc.) cannot be used directly. You can restore backups through Databasus or download them unencrypted via the 'Download' button."
-            >
-              <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
-            </Tooltip>
-          </div>
+              <Tooltip
+                className="cursor-pointer"
+                title="If backup is encrypted, backup files in your storage (S3, local, etc.) cannot be used directly. You can restore backups through Databasus or download them unencrypted via the 'Download' button."
+              >
+                <InfoCircleOutlined className="ml-2" style={{ color: 'gray' }} />
+              </Tooltip>
+            </div>
+          )}
 
           <div className="mb-1 flex w-full items-center">
             <div className="min-w-[150px]">Notifications</div>

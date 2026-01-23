@@ -1,6 +1,7 @@
 package restores
 
 import (
+	"databasus-backend/internal/config"
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/backups/backups"
 	backups_core "databasus-backend/internal/features/backups/backups/core"
@@ -125,6 +126,13 @@ func (s *RestoreService) RestoreBackupWithAuth(
 	backupDatabase, err := s.databaseService.GetDatabase(user, backup.DatabaseID)
 	if err != nil {
 		return err
+	}
+
+	if config.GetEnv().IsCloud {
+		// in cloud mode we use only single thread mode,
+		// because otherwise we will exhaust local storage
+		// space (instead of streaming from S3 directly to DB)
+		requestDTO.PostgresqlDatabase.CpuCount = 1
 	}
 
 	if err := s.validateVersionCompatibility(backupDatabase, requestDTO); err != nil {

@@ -84,7 +84,7 @@ func Test_SaveNewStorage_StorageReturnedViaGet(t *testing.T) {
 
 	assert.Contains(t, storages, savedStorage)
 
-	deleteStorage(t, router, savedStorage.ID, workspace.ID, owner.Token)
+	deleteStorage(t, router, savedStorage.ID, owner.Token)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
 
@@ -122,7 +122,169 @@ func Test_UpdateExistingStorage_UpdatedStorageReturnedViaGet(t *testing.T) {
 	assert.Equal(t, updatedName, updatedStorage.Name)
 	assert.Equal(t, savedStorage.ID, updatedStorage.ID)
 
-	deleteStorage(t, router, updatedStorage.ID, workspace.ID, owner.Token)
+	deleteStorage(t, router, updatedStorage.ID, owner.Token)
+	workspaces_testing.RemoveTestWorkspace(workspace, router)
+}
+
+func Test_CreateSystemStorage_OnlyAdminCanCreate_MemberGetsForbidden(t *testing.T) {
+	admin := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+	member := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	router := createRouter()
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", admin, router)
+
+	// Admin can create system storage
+	systemStorage := createNewStorage(workspace.ID)
+	systemStorage.IsSystem = true
+
+	var savedStorage Storage
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/storages",
+		"Bearer "+admin.Token,
+		*systemStorage,
+		http.StatusOK,
+		&savedStorage,
+	)
+
+	assert.True(t, savedStorage.IsSystem)
+	assert.Equal(t, systemStorage.Name, savedStorage.Name)
+
+	// Member cannot create system storage
+	memberSystemStorage := createNewStorage(workspace.ID)
+	memberSystemStorage.IsSystem = true
+
+	resp := test_utils.MakePostRequest(
+		t,
+		router,
+		"/api/v1/storages",
+		"Bearer "+member.Token,
+		*memberSystemStorage,
+		http.StatusForbidden,
+	)
+	assert.Contains(t, string(resp.Body), "insufficient permissions")
+
+	deleteStorage(t, router, savedStorage.ID, admin.Token)
+	workspaces_testing.RemoveTestWorkspace(workspace, router)
+}
+
+func Test_UpdateStorageIsSystem_OnlyAdminCanUpdate_MemberGetsForbidden(t *testing.T) {
+	admin := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+	member := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	router := createRouter()
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", admin, router)
+
+	// Create a regular storage
+	storage := createNewStorage(workspace.ID)
+	storage.IsSystem = false
+
+	var savedStorage Storage
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/storages",
+		"Bearer "+admin.Token,
+		*storage,
+		http.StatusOK,
+		&savedStorage,
+	)
+
+	assert.False(t, savedStorage.IsSystem)
+
+	// Admin can update to system
+	savedStorage.IsSystem = true
+	var updatedStorage Storage
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/storages",
+		"Bearer "+admin.Token,
+		savedStorage,
+		http.StatusOK,
+		&updatedStorage,
+	)
+
+	assert.True(t, updatedStorage.IsSystem)
+
+	// Member cannot update system storage
+	updatedStorage.Name = "Updated by member"
+	resp := test_utils.MakePostRequest(
+		t,
+		router,
+		"/api/v1/storages",
+		"Bearer "+member.Token,
+		updatedStorage,
+		http.StatusForbidden,
+	)
+	assert.Contains(t, string(resp.Body), "insufficient permissions")
+
+	deleteStorage(t, router, updatedStorage.ID, admin.Token)
+	workspaces_testing.RemoveTestWorkspace(workspace, router)
+}
+
+func Test_UpdateSystemStorage_CannotChangeToPrivate_ReturnsBadRequest(t *testing.T) {
+	admin := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+	router := createRouter()
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", admin, router)
+
+	// Create system storage
+	storage := createNewStorage(workspace.ID)
+	storage.IsSystem = true
+
+	var savedStorage Storage
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/storages",
+		"Bearer "+admin.Token,
+		*storage,
+		http.StatusOK,
+		&savedStorage,
+	)
+
+	assert.True(t, savedStorage.IsSystem)
+
+	// Attempt to change system storage to non-system (should fail)
+	savedStorage.IsSystem = false
+	resp := test_utils.MakePostRequest(
+		t,
+		router,
+		"/api/v1/storages",
+		"Bearer "+admin.Token,
+		savedStorage,
+		http.StatusBadRequest,
+	)
+	assert.Contains(t, string(resp.Body), "system storage cannot be changed to non-system")
+
+	// Verify storage is still system
+	var retrievedStorage Storage
+	test_utils.MakeGetRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/storages/%s", savedStorage.ID.String()),
+		"Bearer "+admin.Token,
+		http.StatusOK,
+		&retrievedStorage,
+	)
+	assert.True(t, retrievedStorage.IsSystem)
+
+	// Admin can update other fields while keeping IsSystem=true
+	savedStorage.IsSystem = true
+	savedStorage.Name = "Updated System Storage"
+	var updatedStorage Storage
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/storages",
+		"Bearer "+admin.Token,
+		savedStorage,
+		http.StatusOK,
+		&updatedStorage,
+	)
+	assert.True(t, updatedStorage.IsSystem)
+	assert.Equal(t, "Updated System Storage", updatedStorage.Name)
+
+	deleteStorage(t, router, updatedStorage.ID, admin.Token)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
 
@@ -205,7 +367,7 @@ func Test_TestExistingStorageConnection_ConnectionEstablished(t *testing.T) {
 
 	assert.Contains(t, string(response.Body), "successful")
 
-	deleteStorage(t, router, savedStorage.ID, workspace.ID, owner.Token)
+	deleteStorage(t, router, savedStorage.ID, owner.Token)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
 
@@ -301,7 +463,14 @@ func Test_WorkspaceRolePermissions(t *testing.T) {
 				fmt.Sprintf("/api/v1/storages?workspace_id=%s", workspace.ID.String()),
 				"Bearer "+testUserToken, http.StatusOK, &storages,
 			)
-			assert.Len(t, storages, 1)
+			// Count only non-system storages for this workspace
+			nonSystemStorages := 0
+			for _, s := range storages {
+				if !s.IsSystem {
+					nonSystemStorages++
+				}
+			}
+			assert.Equal(t, 1, nonSystemStorages)
 
 			// Test CREATE storage
 			createStatusCode := http.StatusOK
@@ -356,14 +525,512 @@ func Test_WorkspaceRolePermissions(t *testing.T) {
 
 			// Cleanup
 			if tt.canCreate {
-				deleteStorage(t, router, savedStorage.ID, workspace.ID, owner.Token)
+				deleteStorage(t, router, savedStorage.ID, owner.Token)
 			}
 			if !tt.canDelete {
-				deleteStorage(t, router, ownerStorage.ID, workspace.ID, owner.Token)
+				deleteStorage(t, router, ownerStorage.ID, owner.Token)
 			}
 			workspaces_testing.RemoveTestWorkspace(workspace, router)
 		})
 	}
+}
+
+func Test_SystemStorage_AdminOnlyOperations(t *testing.T) {
+	tests := []struct {
+		name           string
+		operation      string
+		isAdmin        bool
+		expectSuccess  bool
+		expectedStatus int
+	}{
+		{
+			name:           "admin can create system storage",
+			operation:      "create",
+			isAdmin:        true,
+			expectSuccess:  true,
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "member cannot create system storage",
+			operation:      "create",
+			isAdmin:        false,
+			expectSuccess:  false,
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:           "admin can update storage to make it system",
+			operation:      "update_to_system",
+			isAdmin:        true,
+			expectSuccess:  true,
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "member cannot update storage to make it system",
+			operation:      "update_to_system",
+			isAdmin:        false,
+			expectSuccess:  false,
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:           "admin can update system storage",
+			operation:      "update_system",
+			isAdmin:        true,
+			expectSuccess:  true,
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "member cannot update system storage",
+			operation:      "update_system",
+			isAdmin:        false,
+			expectSuccess:  false,
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:           "admin can delete system storage",
+			operation:      "delete",
+			isAdmin:        true,
+			expectSuccess:  true,
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "member cannot delete system storage",
+			operation:      "delete",
+			isAdmin:        false,
+			expectSuccess:  false,
+			expectedStatus: http.StatusForbidden,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			router := createRouter()
+			GetStorageService().SetStorageDatabaseCounter(&mockStorageDatabaseCounter{})
+
+			owner := users_testing.CreateTestUser(users_enums.UserRoleMember)
+			workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
+
+			var testUserToken string
+			if tt.isAdmin {
+				admin := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+				testUserToken = admin.Token
+			} else {
+				member := users_testing.CreateTestUser(users_enums.UserRoleMember)
+				workspaces_testing.AddMemberToWorkspace(
+					workspace,
+					member,
+					users_enums.WorkspaceRoleMember,
+					owner.Token,
+					router,
+				)
+				testUserToken = member.Token
+			}
+
+			switch tt.operation {
+			case "create":
+				systemStorage := &Storage{
+					WorkspaceID:  workspace.ID,
+					Type:         StorageTypeLocal,
+					Name:         "Test System Storage " + uuid.New().String(),
+					IsSystem:     true,
+					LocalStorage: &local_storage.LocalStorage{},
+				}
+
+				if tt.expectSuccess {
+					var savedStorage Storage
+					test_utils.MakePostRequestAndUnmarshal(
+						t,
+						router,
+						"/api/v1/storages",
+						"Bearer "+testUserToken,
+						*systemStorage,
+						tt.expectedStatus,
+						&savedStorage,
+					)
+					assert.NotEmpty(t, savedStorage.ID)
+					assert.True(t, savedStorage.IsSystem)
+					deleteStorage(t, router, savedStorage.ID, testUserToken)
+				} else {
+					resp := test_utils.MakePostRequest(
+						t,
+						router,
+						"/api/v1/storages",
+						"Bearer "+testUserToken,
+						*systemStorage,
+						tt.expectedStatus,
+					)
+					assert.Contains(t, string(resp.Body), "insufficient permissions")
+				}
+
+			case "update_to_system":
+				// Owner creates private storage first
+				privateStorage := createNewStorage(workspace.ID)
+				var savedStorage Storage
+				test_utils.MakePostRequestAndUnmarshal(
+					t,
+					router,
+					"/api/v1/storages",
+					"Bearer "+owner.Token,
+					*privateStorage,
+					http.StatusOK,
+					&savedStorage,
+				)
+
+				// Test user attempts to make it system
+				savedStorage.IsSystem = true
+				if tt.expectSuccess {
+					var updatedStorage Storage
+					test_utils.MakePostRequestAndUnmarshal(
+						t,
+						router,
+						"/api/v1/storages",
+						"Bearer "+testUserToken,
+						savedStorage,
+						tt.expectedStatus,
+						&updatedStorage,
+					)
+					assert.True(t, updatedStorage.IsSystem)
+					deleteStorage(t, router, savedStorage.ID, testUserToken)
+				} else {
+					resp := test_utils.MakePostRequest(
+						t,
+						router,
+						"/api/v1/storages",
+						"Bearer "+testUserToken,
+						savedStorage,
+						tt.expectedStatus,
+					)
+					assert.Contains(t, string(resp.Body), "insufficient permissions")
+					deleteStorage(t, router, savedStorage.ID, owner.Token)
+				}
+
+			case "update_system":
+				// Admin creates system storage first
+				admin := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+				systemStorage := &Storage{
+					WorkspaceID:  workspace.ID,
+					Type:         StorageTypeLocal,
+					Name:         "Test System Storage " + uuid.New().String(),
+					IsSystem:     true,
+					LocalStorage: &local_storage.LocalStorage{},
+				}
+				var savedStorage Storage
+				test_utils.MakePostRequestAndUnmarshal(
+					t,
+					router,
+					"/api/v1/storages",
+					"Bearer "+admin.Token,
+					*systemStorage,
+					http.StatusOK,
+					&savedStorage,
+				)
+
+				// Test user attempts to update system storage
+				savedStorage.Name = "Updated System Storage " + uuid.New().String()
+				if tt.expectSuccess {
+					var updatedStorage Storage
+					test_utils.MakePostRequestAndUnmarshal(
+						t,
+						router,
+						"/api/v1/storages",
+						"Bearer "+testUserToken,
+						savedStorage,
+						tt.expectedStatus,
+						&updatedStorage,
+					)
+					assert.Equal(t, savedStorage.Name, updatedStorage.Name)
+					assert.True(t, updatedStorage.IsSystem)
+					deleteStorage(t, router, savedStorage.ID, testUserToken)
+				} else {
+					resp := test_utils.MakePostRequest(
+						t,
+						router,
+						"/api/v1/storages",
+						"Bearer "+testUserToken,
+						savedStorage,
+						tt.expectedStatus,
+					)
+					assert.Contains(t, string(resp.Body), "insufficient permissions")
+					deleteStorage(t, router, savedStorage.ID, admin.Token)
+				}
+
+			case "delete":
+				// Admin creates system storage first
+				admin := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+				systemStorage := &Storage{
+					WorkspaceID:  workspace.ID,
+					Type:         StorageTypeLocal,
+					Name:         "Test System Storage " + uuid.New().String(),
+					IsSystem:     true,
+					LocalStorage: &local_storage.LocalStorage{},
+				}
+				var savedStorage Storage
+				test_utils.MakePostRequestAndUnmarshal(
+					t,
+					router,
+					"/api/v1/storages",
+					"Bearer "+admin.Token,
+					*systemStorage,
+					http.StatusOK,
+					&savedStorage,
+				)
+
+				// Test user attempts to delete system storage
+				if tt.expectSuccess {
+					test_utils.MakeDeleteRequest(
+						t,
+						router,
+						fmt.Sprintf("/api/v1/storages/%s", savedStorage.ID.String()),
+						"Bearer "+testUserToken,
+						tt.expectedStatus,
+					)
+				} else {
+					resp := test_utils.MakeDeleteRequest(
+						t,
+						router,
+						fmt.Sprintf("/api/v1/storages/%s", savedStorage.ID.String()),
+						"Bearer "+testUserToken,
+						tt.expectedStatus,
+					)
+					assert.Contains(t, string(resp.Body), "insufficient permissions")
+					deleteStorage(t, router, savedStorage.ID, admin.Token)
+				}
+			}
+
+			workspaces_testing.RemoveTestWorkspace(workspace, router)
+		})
+	}
+}
+
+func Test_GetStorages_SystemStorageIncludedForAllUsers(t *testing.T) {
+	router := createRouter()
+	GetStorageService().SetStorageDatabaseCounter(&mockStorageDatabaseCounter{})
+
+	// Create two workspaces with different owners
+	ownerA := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	ownerB := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspaceA := workspaces_testing.CreateTestWorkspace("Workspace A", ownerA, router)
+	workspaceB := workspaces_testing.CreateTestWorkspace("Workspace B", ownerB, router)
+
+	// Create private storage in workspace A
+	privateStorageA := createNewStorage(workspaceA.ID)
+	var savedPrivateStorageA Storage
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/storages",
+		"Bearer "+ownerA.Token,
+		*privateStorageA,
+		http.StatusOK,
+		&savedPrivateStorageA,
+	)
+
+	// Admin creates system storage in workspace B
+	admin := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+	systemStorageB := &Storage{
+		WorkspaceID:  workspaceB.ID,
+		Type:         StorageTypeLocal,
+		Name:         "Test System Storage B " + uuid.New().String(),
+		IsSystem:     true,
+		LocalStorage: &local_storage.LocalStorage{},
+	}
+	var savedSystemStorageB Storage
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/storages",
+		"Bearer "+admin.Token,
+		*systemStorageB,
+		http.StatusOK,
+		&savedSystemStorageB,
+	)
+
+	// Test: User from workspace A should see both private storage A and system storage B
+	var storagesForWorkspaceA []Storage
+	test_utils.MakeGetRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/storages?workspace_id=%s", workspaceA.ID.String()),
+		"Bearer "+ownerA.Token,
+		http.StatusOK,
+		&storagesForWorkspaceA,
+	)
+
+	assert.GreaterOrEqual(t, len(storagesForWorkspaceA), 2)
+	foundPrivateA := false
+	foundSystemB := false
+	for _, s := range storagesForWorkspaceA {
+		if s.ID == savedPrivateStorageA.ID {
+			foundPrivateA = true
+		}
+		if s.ID == savedSystemStorageB.ID {
+			foundSystemB = true
+		}
+	}
+	assert.True(t, foundPrivateA, "User from workspace A should see private storage A")
+	assert.True(t, foundSystemB, "User from workspace A should see system storage B")
+
+	// Test: User from workspace B should see system storage B
+	var storagesForWorkspaceB []Storage
+	test_utils.MakeGetRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/storages?workspace_id=%s", workspaceB.ID.String()),
+		"Bearer "+ownerB.Token,
+		http.StatusOK,
+		&storagesForWorkspaceB,
+	)
+
+	assert.GreaterOrEqual(t, len(storagesForWorkspaceB), 1)
+	foundSystemBInWorkspaceB := false
+	for _, s := range storagesForWorkspaceB {
+		if s.ID == savedSystemStorageB.ID {
+			foundSystemBInWorkspaceB = true
+		}
+		// Should NOT see private storage from workspace A
+		assert.NotEqual(
+			t,
+			savedPrivateStorageA.ID,
+			s.ID,
+			"User from workspace B should not see private storage from workspace A",
+		)
+	}
+	assert.True(t, foundSystemBInWorkspaceB, "User from workspace B should see system storage B")
+
+	// Test: Outsider (not in any workspace) cannot access storages
+	outsider := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	test_utils.MakeGetRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/storages?workspace_id=%s", workspaceA.ID.String()),
+		"Bearer "+outsider.Token,
+		http.StatusForbidden,
+	)
+
+	// Cleanup
+	deleteStorage(t, router, savedPrivateStorageA.ID, ownerA.Token)
+	deleteStorage(t, router, savedSystemStorageB.ID, admin.Token)
+	workspaces_testing.RemoveTestWorkspace(workspaceA, router)
+	workspaces_testing.RemoveTestWorkspace(workspaceB, router)
+}
+
+func Test_GetSystemStorage_SensitiveDataHiddenForNonAdmin(t *testing.T) {
+	router := createRouter()
+	GetStorageService().SetStorageDatabaseCounter(&mockStorageDatabaseCounter{})
+
+	admin := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+	member := users_testing.CreateTestUser(users_enums.UserRoleMember)
+	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", member, router)
+
+	// Admin creates system S3 storage with credentials
+	systemS3Storage := &Storage{
+		WorkspaceID: workspace.ID,
+		Type:        StorageTypeS3,
+		Name:        "Test System S3 Storage " + uuid.New().String(),
+		IsSystem:    true,
+		S3Storage: &s3_storage.S3Storage{
+			S3Bucket:    "test-system-bucket",
+			S3Region:    "us-east-1",
+			S3AccessKey: "test-access-key-123",
+			S3SecretKey: "test-secret-key-456",
+			S3Endpoint:  "https://s3.amazonaws.com",
+		},
+	}
+
+	var savedStorage Storage
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/storages",
+		"Bearer "+admin.Token,
+		*systemS3Storage,
+		http.StatusOK,
+		&savedStorage,
+	)
+
+	assert.NotEmpty(t, savedStorage.ID)
+	assert.True(t, savedStorage.IsSystem)
+
+	// Test: Admin retrieves system storage - should see S3Storage object with hidden sensitive fields
+	var adminView Storage
+	test_utils.MakeGetRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/storages/%s", savedStorage.ID.String()),
+		"Bearer "+admin.Token,
+		http.StatusOK,
+		&adminView,
+	)
+
+	assert.NotNil(t, adminView.S3Storage, "Admin should see S3Storage object")
+	assert.Equal(t, "test-system-bucket", adminView.S3Storage.S3Bucket)
+	assert.Equal(t, "us-east-1", adminView.S3Storage.S3Region)
+	// Sensitive fields should be hidden (empty strings)
+	assert.Equal(
+		t,
+		"",
+		adminView.S3Storage.S3AccessKey,
+		"Admin should see hidden (empty) access key",
+	)
+	assert.Equal(
+		t,
+		"",
+		adminView.S3Storage.S3SecretKey,
+		"Admin should see hidden (empty) secret key",
+	)
+
+	// Test: Member retrieves system storage - should see storage but all specific data hidden
+	var memberView Storage
+	test_utils.MakeGetRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/storages/%s", savedStorage.ID.String()),
+		"Bearer "+member.Token,
+		http.StatusOK,
+		&memberView,
+	)
+
+	assert.Equal(t, savedStorage.ID, memberView.ID)
+	assert.Equal(t, savedStorage.Name, memberView.Name)
+	assert.True(t, memberView.IsSystem)
+
+	// All storage type objects should be nil for non-admin viewing system storage
+	assert.Nil(t, memberView.S3Storage, "Non-admin should not see S3Storage object")
+	assert.Nil(t, memberView.LocalStorage, "Non-admin should not see LocalStorage object")
+	assert.Nil(
+		t,
+		memberView.GoogleDriveStorage,
+		"Non-admin should not see GoogleDriveStorage object",
+	)
+	assert.Nil(t, memberView.NASStorage, "Non-admin should not see NASStorage object")
+	assert.Nil(t, memberView.AzureBlobStorage, "Non-admin should not see AzureBlobStorage object")
+	assert.Nil(t, memberView.FTPStorage, "Non-admin should not see FTPStorage object")
+	assert.Nil(t, memberView.SFTPStorage, "Non-admin should not see SFTPStorage object")
+	assert.Nil(t, memberView.RcloneStorage, "Non-admin should not see RcloneStorage object")
+
+	// Test: Member can also see system storage in GetStorages list
+	var storages []Storage
+	test_utils.MakeGetRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/storages?workspace_id=%s", workspace.ID.String()),
+		"Bearer "+member.Token,
+		http.StatusOK,
+		&storages,
+	)
+
+	foundSystemStorage := false
+	for _, s := range storages {
+		if s.ID == savedStorage.ID {
+			foundSystemStorage = true
+			assert.True(t, s.IsSystem)
+			assert.Nil(t, s.S3Storage, "Non-admin should not see S3Storage in list")
+		}
+	}
+	assert.True(t, foundSystemStorage, "System storage should be in list")
+
+	// Cleanup
+	deleteStorage(t, router, savedStorage.ID, admin.Token)
+	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
 
 func Test_UserNotInWorkspace_CannotAccessStorages(t *testing.T) {
@@ -417,7 +1084,7 @@ func Test_UserNotInWorkspace_CannotAccessStorages(t *testing.T) {
 		http.StatusForbidden,
 	)
 
-	deleteStorage(t, router, savedStorage.ID, workspace.ID, owner.Token)
+	deleteStorage(t, router, savedStorage.ID, owner.Token)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
 
@@ -450,7 +1117,7 @@ func Test_CrossWorkspaceSecurity_CannotAccessStorageFromAnotherWorkspace(t *test
 	)
 	assert.Contains(t, string(response.Body), "insufficient permissions")
 
-	deleteStorage(t, router, savedStorage.ID, workspace1.ID, owner1.Token)
+	deleteStorage(t, router, savedStorage.ID, owner1.Token)
 	workspaces_testing.RemoveTestWorkspace(workspace1, router)
 	workspaces_testing.RemoveTestWorkspace(workspace2, router)
 }
@@ -1122,10 +1789,10 @@ func Test_TransferStorage_PermissionsEnforced(t *testing.T) {
 				)
 				assert.Equal(t, targetWorkspace.ID, retrievedStorage.WorkspaceID)
 
-				deleteStorage(t, router, savedStorage.ID, targetWorkspace.ID, targetOwner.Token)
+				deleteStorage(t, router, savedStorage.ID, targetOwner.Token)
 			} else {
 				assert.Contains(t, string(testResp.Body), "insufficient permissions")
-				deleteStorage(t, router, savedStorage.ID, sourceWorkspace.ID, sourceOwner.Token)
+				deleteStorage(t, router, savedStorage.ID, sourceOwner.Token)
 			}
 
 			workspaces_testing.RemoveTestWorkspace(sourceWorkspace, router)
@@ -1175,9 +1842,127 @@ func Test_TransferStorageNotManagableWorkspace_TransferFailed(t *testing.T) {
 		"insufficient permissions to manage storage in target workspace",
 	)
 
-	deleteStorage(t, router, savedStorage.ID, workspace1.ID, userA.Token)
+	deleteStorage(t, router, savedStorage.ID, userA.Token)
 	workspaces_testing.RemoveTestWorkspace(workspace1, router)
 	workspaces_testing.RemoveTestWorkspace(workspace2, router)
+}
+
+func Test_TransferSystemStorage_TransferBlocked(t *testing.T) {
+	router := createRouter()
+	GetStorageService().SetStorageDatabaseCounter(&mockStorageDatabaseCounter{})
+
+	admin := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
+	workspaceA := workspaces_testing.CreateTestWorkspace("Workspace A", admin, router)
+	workspaceB := workspaces_testing.CreateTestWorkspace("Workspace B", admin, router)
+
+	// Admin creates system storage in workspace A
+	systemStorage := &Storage{
+		WorkspaceID:  workspaceA.ID,
+		Type:         StorageTypeLocal,
+		Name:         "Test System Storage " + uuid.New().String(),
+		IsSystem:     true,
+		LocalStorage: &local_storage.LocalStorage{},
+	}
+	var savedSystemStorage Storage
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/storages",
+		"Bearer "+admin.Token,
+		*systemStorage,
+		http.StatusOK,
+		&savedSystemStorage,
+	)
+
+	// Admin attempts to transfer system storage to workspace B - should be blocked
+	transferRequest := TransferStorageRequest{
+		TargetWorkspaceID: workspaceB.ID,
+	}
+
+	testResp := test_utils.MakePostRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/storages/%s/transfer", savedSystemStorage.ID.String()),
+		"Bearer "+admin.Token,
+		transferRequest,
+		http.StatusBadRequest,
+	)
+
+	assert.Contains(
+		t,
+		string(testResp.Body),
+		"system storage cannot be transferred",
+		"Transfer should fail with appropriate error message",
+	)
+
+	// Verify storage is still in workspace A
+	var retrievedStorage Storage
+	test_utils.MakeGetRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/storages/%s", savedSystemStorage.ID.String()),
+		"Bearer "+admin.Token,
+		http.StatusOK,
+		&retrievedStorage,
+	)
+	assert.Equal(
+		t,
+		workspaceA.ID,
+		retrievedStorage.WorkspaceID,
+		"Storage should remain in workspace A",
+	)
+
+	// Test regression: Non-system storage can still be transferred
+	privateStorage := createNewStorage(workspaceA.ID)
+	var savedPrivateStorage Storage
+	test_utils.MakePostRequestAndUnmarshal(
+		t,
+		router,
+		"/api/v1/storages",
+		"Bearer "+admin.Token,
+		*privateStorage,
+		http.StatusOK,
+		&savedPrivateStorage,
+	)
+
+	privateTransferResp := test_utils.MakePostRequest(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/storages/%s/transfer", savedPrivateStorage.ID.String()),
+		"Bearer "+admin.Token,
+		transferRequest,
+		http.StatusOK,
+	)
+
+	assert.Contains(
+		t,
+		string(privateTransferResp.Body),
+		"transferred successfully",
+		"Private storage should be transferable",
+	)
+
+	// Verify private storage was transferred to workspace B
+	var transferredStorage Storage
+	test_utils.MakeGetRequestAndUnmarshal(
+		t,
+		router,
+		fmt.Sprintf("/api/v1/storages/%s", savedPrivateStorage.ID.String()),
+		"Bearer "+admin.Token,
+		http.StatusOK,
+		&transferredStorage,
+	)
+	assert.Equal(
+		t,
+		workspaceB.ID,
+		transferredStorage.WorkspaceID,
+		"Private storage should be in workspace B",
+	)
+
+	// Cleanup
+	deleteStorage(t, router, savedSystemStorage.ID, admin.Token)
+	deleteStorage(t, router, savedPrivateStorage.ID, admin.Token)
+	workspaces_testing.RemoveTestWorkspace(workspaceA, router)
+	workspaces_testing.RemoveTestWorkspace(workspaceB, router)
 }
 
 func createRouter() *gin.Engine {
@@ -1212,12 +1997,13 @@ func verifyStorageData(t *testing.T, expected *Storage, actual *Storage) {
 	assert.Equal(t, expected.Name, actual.Name)
 	assert.Equal(t, expected.Type, actual.Type)
 	assert.Equal(t, expected.WorkspaceID, actual.WorkspaceID)
+	assert.Equal(t, expected.IsSystem, actual.IsSystem)
 }
 
 func deleteStorage(
 	t *testing.T,
 	router *gin.Engine,
-	storageID, workspaceID uuid.UUID,
+	storageID uuid.UUID,
 	token string,
 ) {
 	test_utils.MakeDeleteRequest(

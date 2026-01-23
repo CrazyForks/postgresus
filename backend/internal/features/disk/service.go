@@ -12,6 +12,15 @@ import (
 type DiskService struct{}
 
 func (s *DiskService) GetDiskUsage() (*DiskUsage, error) {
+	if config.GetEnv().IsCloud {
+		return &DiskUsage{
+			Platform:        PlatformLinux,
+			TotalSpaceBytes: 100,
+			UsedSpaceBytes:  0,
+			FreeSpaceBytes:  100,
+		}, nil
+	}
+
 	platform := s.detectPlatform()
 
 	var path string

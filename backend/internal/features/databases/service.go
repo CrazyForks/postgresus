@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"databasus-backend/internal/config"
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	"databasus-backend/internal/features/databases/databases/mariadb"
 	"databasus-backend/internal/features/databases/databases/mongodb"
@@ -86,6 +87,23 @@ func (s *DatabaseService) CreateDatabase(
 		return nil, fmt.Errorf("failed to auto-detect database data: %w", err)
 	}
 
+	if config.GetEnv().IsCloud {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		isReadOnly, permissions, err := database.IsUserReadOnly(ctx, s.logger, s.fieldEncryptor)
+		if err != nil {
+			return nil, fmt.Errorf("failed to verify user permissions: %w", err)
+		}
+
+		if !isReadOnly {
+			return nil, fmt.Errorf(
+				"in cloud mode, only read-only database users are allowed (user has permissions: %v)",
+				permissions,
+			)
+		}
+	}
+
 	if err := database.EncryptSensitiveFields(s.fieldEncryptor); err != nil {
 		return nil, fmt.Errorf("failed to encrypt sensitive fields: %w", err)
 	}
@@ -151,6 +169,27 @@ func (s *DatabaseService) UpdateDatabase(
 
 	if err := existingDatabase.PopulateDbData(s.logger, s.fieldEncryptor); err != nil {
 		return fmt.Errorf("failed to auto-detect database data: %w", err)
+	}
+
+	if config.GetEnv().IsCloud {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		isReadOnly, permissions, err := existingDatabase.IsUserReadOnly(
+			ctx,
+			s.logger,
+			s.fieldEncryptor,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to verify user permissions: %w", err)
+		}
+
+		if !isReadOnly {
+			return fmt.Errorf(
+				"in cloud mode, only read-only database users are allowed (user has permissions: %v)",
+				permissions,
+			)
+		}
 	}
 
 	if err := existingDatabase.EncryptSensitiveFields(s.fieldEncryptor); err != nil {
@@ -649,38 +688,7 @@ func (s *DatabaseService) IsUserReadOnly(
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	switch usingDatabase.Type {
-	case DatabaseTypePostgres:
-		return usingDatabase.Postgresql.IsUserReadOnly(
-			ctx,
-			s.logger,
-			s.fieldEncryptor,
-			usingDatabase.ID,
-		)
-	case DatabaseTypeMysql:
-		return usingDatabase.Mysql.IsUserReadOnly(
-			ctx,
-			s.logger,
-			s.fieldEncryptor,
-			usingDatabase.ID,
-		)
-	case DatabaseTypeMariadb:
-		return usingDatabase.Mariadb.IsUserReadOnly(
-			ctx,
-			s.logger,
-			s.fieldEncryptor,
-			usingDatabase.ID,
-		)
-	case DatabaseTypeMongodb:
-		return usingDatabase.Mongodb.IsUserReadOnly(
-			ctx,
-			s.logger,
-			s.fieldEncryptor,
-			usingDatabase.ID,
-		)
-	default:
-		return false, nil, errors.New("read-only check not supported for this database type")
-	}
+	return usingDatabase.IsUserReadOnly(ctx, s.logger, s.fieldEncryptor)
 }
 
 func (s *DatabaseService) CreateReadOnlyUser(

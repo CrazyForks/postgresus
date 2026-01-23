@@ -40,6 +40,12 @@ export const StorageCardComponent = ({
           Has save error
         </div>
       )}
+
+      {storage.isSystem && (
+        <div className="mt-2 inline-block rounded-lg bg-[#ffffff10] px-2 py-1 text-xs text-gray-700 dark:text-gray-300">
+          System storage
+        </div>
+      )}
     </div>
   );
 };

@@ -3,6 +3,7 @@ import { Spin } from 'antd';
 import { useEffect, useState } from 'react';
 
 import { userApi } from '../entity/users';
+import { PlaygroundWarningComponent } from '../features/playground';
 import {
   AdminPasswordComponent,
   AuthNavbarComponent,
@@ -60,6 +61,8 @@ export function AuthPageComponent() {
           </div>
         </div>
       )}
+
+      <PlaygroundWarningComponent />
     </div>
   );
 }

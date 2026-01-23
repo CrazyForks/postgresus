@@ -11,6 +11,7 @@ import {
   type PostgresqlDatabase,
   databaseApi,
 } from '../../../entity/databases';
+import type { UserProfile } from '../../../entity/users';
 import { EditBackupConfigComponent } from '../../backups';
 import { CreateReadOnlyComponent } from './edit/CreateReadOnlyComponent';
 import { EditDatabaseBaseInfoComponent } from './edit/EditDatabaseBaseInfoComponent';
@@ -18,8 +19,8 @@ import { EditDatabaseNotifiersComponent } from './edit/EditDatabaseNotifiersComp
 import { EditDatabaseSpecificDataComponent } from './edit/EditDatabaseSpecificDataComponent';
 
 interface Props {
+  user: UserProfile;
   workspaceId: string;
-
   onCreated: (databaseId: string) => void;
   onClose: () => void;
 }
@@ -62,7 +63,7 @@ const initializeDatabaseTypeData = (db: Database): Database => {
   }
 };
 
-export const CreateDatabaseComponent = ({ workspaceId, onCreated, onClose }: Props) => {
+export const CreateDatabaseComponent = ({ user, workspaceId, onCreated, onClose }: Props) => {
   const [isCreating, setIsCreating] = useState(false);
   const [backupConfig, setBackupConfig] = useState<BackupConfig | undefined>();
   const [database, setDatabase] = useState<Database>(createInitialDatabase(workspaceId));
@@ -149,6 +150,7 @@ export const CreateDatabaseComponent = ({ workspaceId, onCreated, onClose }: Pro
   if (step === 'backup-config') {
     return (
       <EditBackupConfigComponent
+        user={user}
         database={database}
         isShowCancelButton={false}
         onCancel={() => onClose()}

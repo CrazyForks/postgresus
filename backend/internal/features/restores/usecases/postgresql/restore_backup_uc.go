@@ -65,6 +65,13 @@ func (uc *RestorePostgresqlBackupUsecase) Execute(
 		return fmt.Errorf("target database name is required for pg_restore")
 	}
 
+	// Validate CPU count constraint for cloud environments
+	if config.GetEnv().IsCloud && pg.CpuCount > 1 {
+		return fmt.Errorf(
+			"parallel restore (CPU count > 1) is not supported in cloud mode due to storage constraints. Please use CPU count = 1",
+		)
+	}
+
 	pgBin := tools.GetPostgresqlExecutable(
 		pg.Version,
 		"pg_restore",
