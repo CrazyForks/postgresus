@@ -341,6 +341,7 @@ export const MainScreenComponent = () => {
                       <DatabasesComponent
                         contentHeight={contentHeight}
                         workspace={selectedWorkspace}
+                        user={user}
                         isCanManageDBs={isCanManageDBs}
                         key={`databases-${selectedWorkspace.id}`}
                       />

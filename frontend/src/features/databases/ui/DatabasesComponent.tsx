@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 
 import { databaseApi } from '../../../entity/databases';
 import type { Database } from '../../../entity/databases';
+import type { UserProfile } from '../../../entity/users';
 import type { WorkspaceResponse } from '../../../entity/workspaces';
 import { useIsMobile } from '../../../shared/hooks';
 import { CreateDatabaseComponent } from './CreateDatabaseComponent';
@@ -12,12 +13,13 @@ import { DatabaseComponent } from './DatabaseComponent';
 interface Props {
   contentHeight: number;
   workspace: WorkspaceResponse;
+  user: UserProfile;
   isCanManageDBs: boolean;
 }
 
 const SELECTED_DATABASE_STORAGE_KEY = 'selectedDatabaseId';
 
-export const DatabasesComponent = ({ contentHeight, workspace, isCanManageDBs }: Props) => {
+export const DatabasesComponent = ({ contentHeight, workspace, user, isCanManageDBs }: Props) => {
   const isMobile = useIsMobile();
   const [isLoading, setIsLoading] = useState(true);
   const [databases, setDatabases] = useState<Database[]>([]);
@@ -157,6 +159,7 @@ export const DatabasesComponent = ({ contentHeight, workspace, isCanManageDBs }:
             <DatabaseComponent
               contentHeight={isMobile ? contentHeight - 50 : contentHeight}
               databaseId={selectedDatabaseId}
+              user={user}
               onDatabaseChanged={() => {
                 loadDatabases();
               }}
@@ -185,6 +188,7 @@ export const DatabasesComponent = ({ contentHeight, workspace, isCanManageDBs }:
           <div className="mt-5" />
 
           <CreateDatabaseComponent
+            user={user}
             workspaceId={workspace.id}
             onCreated={(databaseId) => {
               loadDatabases(false, databaseId);

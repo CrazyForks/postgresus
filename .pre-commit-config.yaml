@@ -18,6 +18,13 @@ repos:
         files: ^frontend/.*\.(ts|tsx|js|jsx)$
         pass_filenames: false
 
+      - id: frontend-build
+        name: Frontend Build
+        entry: bash -c "cd frontend && npm run build"
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx|json|css)$
+        pass_filenames: false
+
   # Backend checks
   - repo: local
     hooks:

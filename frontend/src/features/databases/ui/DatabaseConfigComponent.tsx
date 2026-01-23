@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react';
 
 import { backupConfigApi } from '../../../entity/backups';
 import { type Database, databaseApi } from '../../../entity/databases';
+import type { UserProfile } from '../../../entity/users';
 import { ToastHelper } from '../../../shared/toast';
 import { ConfirmationComponent } from '../../../shared/ui';
 import { EditBackupConfigComponent, ShowBackupConfigComponent } from '../../backups';
@@ -22,6 +23,7 @@ import { ShowDatabaseSpecificDataComponent } from './show/ShowDatabaseSpecificDa
 
 interface Props {
   database: Database;
+  user: UserProfile;
   setDatabase: (database?: Database | undefined) => void;
   onDatabaseChanged: (database: Database) => void;
   onDatabaseDeleted: () => void;
@@ -33,6 +35,7 @@ interface Props {
 
 export const DatabaseConfigComponent = ({
   database,
+  user,
   setDatabase,
   onDatabaseChanged,
   onDatabaseDeleted,
@@ -311,6 +314,7 @@ export const DatabaseConfigComponent = ({
               {isEditBackupConfig ? (
                 <EditBackupConfigComponent
                   database={database}
+                  user={user}
                   isShowCancelButton
                   onCancel={() => {
                     setIsEditBackupConfig(false);
@@ -464,6 +468,7 @@ export const DatabaseConfigComponent = ({
       {isShowTransferDialog && (
         <DatabaseTransferDialogComponent
           database={database}
+          user={user}
           currentStorageId={currentStorageId}
           onClose={() => setIsShowTransferDialog(false)}
           onTransferred={() => {
