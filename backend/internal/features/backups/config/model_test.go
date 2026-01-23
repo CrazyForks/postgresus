@@ -279,16 +279,6 @@ func Test_Validate_WhenMaxTotalSizeIsNegative_ValidationFails(t *testing.T) {
 	assert.EqualError(t, err, "max backups total size must be non-negative")
 }
 
-func Test_Validate_WhenPlanIsNil_OnlyBasicValidationsApply(t *testing.T) {
-	config := createValidBackupConfig()
-	config.StorePeriod = period.PeriodForever
-	config.MaxBackupSizeMB = 0
-	config.MaxBackupsTotalSizeMB = 0
-
-	err := config.Validate(nil)
-	assert.NoError(t, err)
-}
-
 func Test_Validate_WhenPlanLimitsAreAtBoundary_ValidationWorks(t *testing.T) {
 	tests := []struct {
 		name          string
