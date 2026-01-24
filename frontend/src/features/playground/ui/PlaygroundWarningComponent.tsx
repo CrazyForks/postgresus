@@ -113,7 +113,8 @@ export const PlaygroundWarningComponent = (): JSX.Element => {
           <p className="text-gray-700 dark:text-gray-300">
             No, because playground use only read-only users and cannot affect your DB. Only issue
             you can face is instability: playground background workers frequently reloaded so backup
-            can be slower or be restarted due to app restart
+            can be slower or be restarted due to app restart. Do not rely production DBs on
+            playground, please
           </p>
         </div>
 

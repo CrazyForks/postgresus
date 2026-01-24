@@ -22,12 +22,20 @@ const (
 
 type EnvVariables struct {
 	IsTesting            bool
-	DatabaseDsn          string            `env:"DATABASE_DSN"         required:"true"`
 	EnvMode              env_utils.EnvMode `env:"ENV_MODE"             required:"true"`
 	PostgresesInstallDir string            `env:"POSTGRES_INSTALL_DIR"`
 	MysqlInstallDir      string            `env:"MYSQL_INSTALL_DIR"`
 	MariadbInstallDir    string            `env:"MARIADB_INSTALL_DIR"`
 	MongodbInstallDir    string            `env:"MONGODB_INSTALL_DIR"`
+
+	// Internal database
+	DatabaseDsn string `env:"DATABASE_DSN"    required:"true"`
+	// Internal Valkey
+	ValkeyHost     string `env:"VALKEY_HOST"     required:"true"`
+	ValkeyPort     string `env:"VALKEY_PORT"     required:"true"`
+	ValkeyUsername string `env:"VALKEY_USERNAME" required:"true"`
+	ValkeyPassword string `env:"VALKEY_PASSWORD" required:"true"`
+	ValkeyIsSsl    bool   `env:"VALKEY_IS_SSL"   required:"true"`
 
 	IsCloud       bool   `env:"IS_CLOUD"`
 	TestLocalhost string `env:"TEST_LOCALHOST"`
@@ -89,13 +97,6 @@ type EnvVariables struct {
 	TestMongodb60Port string `env:"TEST_MONGODB_60_PORT"`
 	TestMongodb70Port string `env:"TEST_MONGODB_70_PORT"`
 	TestMongodb82Port string `env:"TEST_MONGODB_82_PORT"`
-
-	// Valkey
-	ValkeyHost     string `env:"VALKEY_HOST"     required:"true"`
-	ValkeyPort     string `env:"VALKEY_PORT"     required:"true"`
-	ValkeyUsername string `env:"VALKEY_USERNAME"`
-	ValkeyPassword string `env:"VALKEY_PASSWORD"`
-	ValkeyIsSsl    bool   `env:"VALKEY_IS_SSL"   required:"true"`
 
 	// oauth
 	GitHubClientID     string `env:"GITHUB_CLIENT_ID"`
@@ -195,6 +196,14 @@ func loadEnvVariables() {
 		}
 	}
 
+	// Check for external database override
+	if externalDsn := os.Getenv("DANGEROUS_EXTERNAL_DATABASE_DSN"); externalDsn != "" {
+		log.Warn(
+			"Using DANGEROUS_EXTERNAL_DATABASE_DSN - connecting to external database instead of internal PostgreSQL",
+		)
+		env.DatabaseDsn = externalDsn
+	}
+
 	if env.DatabaseDsn == "" {
 		log.Error("DATABASE_DSN is empty")
 		os.Exit(1)
@@ -263,6 +272,27 @@ func loadEnvVariables() {
 	if env.ValkeyPort == "" {
 		log.Error("VALKEY_PORT is empty")
 		os.Exit(1)
+	}
+
+	// Check for external Valkey override
+	if externalValkeyHost := os.Getenv("DANGEROUS_VALKEY_HOST"); externalValkeyHost != "" {
+		log.Warn(
+			"Using DANGEROUS_VALKEY_* variables - connecting to external Valkey instead of internal instance",
+		)
+		env.ValkeyHost = externalValkeyHost
+
+		if externalValkeyPort := os.Getenv("DANGEROUS_VALKEY_PORT"); externalValkeyPort != "" {
+			env.ValkeyPort = externalValkeyPort
+		}
+		if externalValkeyUsername := os.Getenv("DANGEROUS_VALKEY_USERNAME"); externalValkeyUsername != "" {
+			env.ValkeyUsername = externalValkeyUsername
+		}
+		if externalValkeyPassword := os.Getenv("DANGEROUS_VALKEY_PASSWORD"); externalValkeyPassword != "" {
+			env.ValkeyPassword = externalValkeyPassword
+		}
+		if externalValkeyIsSsl := os.Getenv("DANGEROUS_VALKEY_IS_SSL"); externalValkeyIsSsl != "" {
+			env.ValkeyIsSsl = externalValkeyIsSsl == "true"
+		}
 	}
 
 	// Store the data and temp folders one level below the root
