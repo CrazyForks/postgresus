@@ -19,3 +19,4 @@ temp/
 cmd.exe
 temp/
 valkey-data/
+victoria-logs-data/
