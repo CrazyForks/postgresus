@@ -44,7 +44,7 @@ func WaitForBackupCompletion(
 		backups, err := backupRepository.FindByDatabaseID(databaseID)
 		if err != nil {
 			t.Logf("WaitForBackupCompletion: error finding backups: %v", err)
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 
@@ -70,7 +70,7 @@ func WaitForBackupCompletion(
 			}
 		}
 
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	t.Logf("WaitForBackupCompletion: timeout waiting for backup to complete")

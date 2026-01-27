@@ -125,7 +125,7 @@ func Test_GetBackups_PermissionsEnforced(t *testing.T) {
 
 			// Cleanup
 			databases.RemoveTestDatabase(database)
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			storages.RemoveTestStorage(storage.ID)
 			workspaces_testing.RemoveTestWorkspace(workspace, router)
 		})
@@ -375,7 +375,7 @@ func Test_DeleteBackup_PermissionsEnforced(t *testing.T) {
 
 			// Cleanup
 			databases.RemoveTestDatabase(database)
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			storages.RemoveTestStorage(storage.ID)
 			workspaces_testing.RemoveTestWorkspace(workspace, router)
 		})
@@ -421,7 +421,7 @@ func Test_DeleteBackup_AuditLogWritten(t *testing.T) {
 
 	// Cleanup
 	databases.RemoveTestDatabase(database)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	storages.RemoveTestStorage(storage.ID)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
@@ -517,7 +517,7 @@ func Test_GenerateDownloadToken_PermissionsEnforced(t *testing.T) {
 
 			// Cleanup
 			databases.RemoveTestDatabase(database)
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			storages.RemoveTestStorage(storage.ID)
 			workspaces_testing.RemoveTestWorkspace(workspace, router)
 		})
@@ -559,7 +559,7 @@ func Test_DownloadBackup_WithValidToken_Success(t *testing.T) {
 
 	// Cleanup
 	databases.RemoveTestDatabase(database)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	storages.RemoveTestStorage(storage.ID)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
@@ -584,7 +584,7 @@ func Test_DownloadBackup_WithoutToken_Unauthorized(t *testing.T) {
 
 	// Cleanup
 	databases.RemoveTestDatabase(database)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	storages.RemoveTestStorage(storage.ID)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
@@ -609,7 +609,7 @@ func Test_DownloadBackup_WithInvalidToken_Unauthorized(t *testing.T) {
 
 	// Cleanup
 	databases.RemoveTestDatabase(database)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	storages.RemoveTestStorage(storage.ID)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
@@ -664,7 +664,7 @@ func Test_DownloadBackup_WithExpiredToken_Unauthorized(t *testing.T) {
 
 	// Cleanup
 	databases.RemoveTestDatabase(database)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	storages.RemoveTestStorage(storage.ID)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
@@ -710,7 +710,7 @@ func Test_DownloadBackup_TokenUsedOnce_CannotReuseToken(t *testing.T) {
 
 	// Cleanup
 	databases.RemoveTestDatabase(database)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	storages.RemoveTestStorage(storage.ID)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
@@ -771,7 +771,7 @@ func Test_DownloadBackup_WithDifferentBackupToken_Unauthorized(t *testing.T) {
 	// Cleanup
 	databases.RemoveTestDatabase(database1)
 	databases.RemoveTestDatabase(database2)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	storages.RemoveTestStorage(storage.ID)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
@@ -828,7 +828,7 @@ func Test_DownloadBackup_AuditLogWritten(t *testing.T) {
 
 	// Cleanup
 	databases.RemoveTestDatabase(database)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	storages.RemoveTestStorage(storage.ID)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
@@ -934,7 +934,7 @@ func Test_DownloadBackup_ProperFilenameForPostgreSQL(t *testing.T) {
 
 			// Cleanup
 			databases.RemoveTestDatabase(database)
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			storages.RemoveTestStorage(storage.ID)
 			workspaces_testing.RemoveTestWorkspace(workspace, router)
 		})
@@ -1032,7 +1032,7 @@ func Test_CancelBackup_InProgressBackup_SuccessfullyCancelled(t *testing.T) {
 
 	// Cleanup
 	databases.RemoveTestDatabase(database)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	storages.RemoveTestStorage(storage.ID)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
@@ -1084,7 +1084,7 @@ func Test_ConcurrentDownloadPrevention(t *testing.T) {
 		downloadComplete <- true
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	service := GetBackupService()
 	if !service.IsDownloadInProgress(owner.UserID) {
@@ -1093,7 +1093,7 @@ func Test_ConcurrentDownloadPrevention(t *testing.T) {
 
 		// Cleanup before early return
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		storages.RemoveTestStorage(storage.ID)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
 		return
@@ -1145,7 +1145,7 @@ func Test_ConcurrentDownloadPrevention(t *testing.T) {
 
 	// Cleanup
 	databases.RemoveTestDatabase(database)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	storages.RemoveTestStorage(storage.ID)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
@@ -1185,7 +1185,7 @@ func Test_GenerateDownloadToken_BlockedWhenDownloadInProgress(t *testing.T) {
 		downloadComplete <- true
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	service := GetBackupService()
 	if !service.IsDownloadInProgress(owner.UserID) {
@@ -1194,7 +1194,7 @@ func Test_GenerateDownloadToken_BlockedWhenDownloadInProgress(t *testing.T) {
 
 		// Cleanup before early return
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		storages.RemoveTestStorage(storage.ID)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
 		return
@@ -1239,7 +1239,7 @@ func Test_GenerateDownloadToken_BlockedWhenDownloadInProgress(t *testing.T) {
 
 	// Cleanup
 	databases.RemoveTestDatabase(database)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	storages.RemoveTestStorage(storage.ID)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
@@ -1465,7 +1465,7 @@ func Test_BandwidthThrottling_SingleDownload_Uses75Percent(t *testing.T) {
 		downloadComplete <- true
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	activeCount := bandwidthManager.GetActiveDownloadCount()
 	if activeCount > initialCount {
@@ -1478,13 +1478,13 @@ func Test_BandwidthThrottling_SingleDownload_Uses75Percent(t *testing.T) {
 		<-downloadStarted
 	}
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	finalCount := bandwidthManager.GetActiveDownloadCount()
 	assert.Equal(t, initialCount, finalCount, "Download should be unregistered after completion")
 
 	// Cleanup
 	databases.RemoveTestDatabase(database)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	storages.RemoveTestStorage(storage.ID)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
@@ -1609,7 +1609,7 @@ func Test_BandwidthThrottling_MultipleDownloads_ShareBandwidth(t *testing.T) {
 
 	// Cleanup
 	databases.RemoveTestDatabase(database)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	storages.RemoveTestStorage(storage.ID)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
@@ -1681,7 +1681,7 @@ func Test_BandwidthThrottling_DynamicAdjustment(t *testing.T) {
 		complete1 <- true
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	go func() {
 		test_utils.MakeGetRequest(
@@ -1703,7 +1703,7 @@ func Test_BandwidthThrottling_DynamicAdjustment(t *testing.T) {
 
 	// Cleanup
 	databases.RemoveTestDatabase(database)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	storages.RemoveTestStorage(storage.ID)
 	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }

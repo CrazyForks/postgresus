@@ -104,7 +104,7 @@ func WaitForBackupCompletion(
 		backups, err := backupRepository.FindByDatabaseID(databaseID)
 		if err != nil {
 			t.Logf("WaitForBackupCompletion: error finding backups: %v", err)
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 
@@ -130,7 +130,7 @@ func WaitForBackupCompletion(
 			}
 		}
 
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	t.Logf("WaitForBackupCompletion: timeout waiting for backup to complete")
@@ -170,7 +170,7 @@ func StartBackuperNodeForTest(t *testing.T, backuperNode *BackuperNode) context.
 				}
 			}
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	t.Fatalf("BackuperNode failed to register in registry within timeout")
@@ -227,7 +227,7 @@ func StopBackuperNodeForTest(t *testing.T, cancel context.CancelFunc, backuperNo
 				return
 			}
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	t.Logf("BackuperNode stop completed for %s", backuperNode.nodeID)
@@ -287,7 +287,7 @@ func WaitForActiveTasksDecrease(
 		stats, err := backupNodesRegistry.GetBackupNodesStats()
 		if err != nil {
 			t.Logf("WaitForActiveTasksDecrease: error getting node stats: %v", err)
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(1000 * time.Millisecond)
 			continue
 		}
 
@@ -310,7 +310,7 @@ func WaitForActiveTasksDecrease(
 			}
 		}
 
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(1000 * time.Millisecond)
 	}
 
 	t.Logf("WaitForActiveTasksDecrease: timeout waiting for active tasks to decrease")
