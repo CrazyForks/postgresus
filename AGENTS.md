@@ -573,15 +573,15 @@ var (
 
 func SetupDependencies() {
     wasAlreadySetup := isSetup.Load()
-    
+
     setupOnce.Do(func() {
         // Initialize dependencies here
         someService.SetDependency(otherService)
         anotherService.AddListener(listener)
-        
+
         isSetup.Store(true)
     })
-    
+
     if wasAlreadySetup {
         logger.GetLogger().Warn("SetupDependencies called multiple times, ignoring subsequent call")
     }
@@ -630,14 +630,14 @@ type BackgroundService struct {
 
 func (s *BackgroundService) Run(ctx context.Context) {
     wasAlreadyRun := s.hasRun.Load()
-    
+
     s.runOnce.Do(func() {
         s.hasRun.Store(true)
-        
+
         // Existing infinite loop logic
         ticker := time.NewTicker(1 * time.Minute)
         defer ticker.Stop()
-        
+
         for {
             select {
             case <-ctx.Done():
@@ -647,7 +647,7 @@ func (s *BackgroundService) Run(ctx context.Context) {
             }
         }
     })
-    
+
     if wasAlreadyRun {
         panic(fmt.Sprintf("%T.Run() called multiple times", s))
     }
@@ -765,6 +765,43 @@ Use these naming patterns:
 - Replace inline test data creation with reusable helper functions
 - Consolidate similar test patterns across different test files
 - Make tests more readable and maintainable for other developers
+
+**Clean Up Test Data:**
+
+- If the feature supports cleanup operations (DELETE endpoints, cleanup methods), use them in tests
+- Clean up resources after test execution to avoid test data pollution
+- Use `defer` statements or explicit cleanup calls at the end of tests
+- Prioritize using API methods for cleanup (not direct database deletion)
+- Examples:
+  - CRUD features: delete created records via DELETE endpoint
+  - File uploads: remove uploaded files
+  - Background jobs: stop schedulers or cancel running tasks
+- Skip cleanup only when:
+  - Tests run in isolated transactions that auto-rollback
+  - Cleanup endpoint doesn't exist yet
+  - Test explicitly validates failure scenarios where cleanup isn't possible
+
+**Example:**
+
+```go
+func Test_BackupLifecycle_CreateAndDelete(t *testing.T) {
+    router := createTestRouter()
+    workspace := workspaces_testing.CreateTestWorkspace("Test", owner)
+
+    // Create backup config
+    config := createBackupConfig(t, router, workspace.ID, owner.Token)
+
+    // Cleanup at end of test
+    defer deleteBackupConfig(t, router, workspace.ID, config.ID, owner.Token)
+
+    // Test operations...
+    triggerBackup(t, router, workspace.ID, config.ID, owner.Token)
+
+    // Verify backup was created
+    backups := getBackups(t, router, workspace.ID, owner.Token)
+    assert.NotEmpty(t, backups)
+}
+```
 
 #### Testing Utilities Structure
 

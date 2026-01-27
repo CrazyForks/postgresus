@@ -27,6 +27,12 @@ func Test_AttachStorageFromSameWorkspace_SuccessfullyAttached(t *testing.T) {
 	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
 	storage := createTestStorage(workspace.ID)
 
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		storages.RemoveTestStorage(storage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
+
 	timeOfDay := "04:00"
 	request := BackupConfig{
 		DatabaseID:       database.ID,
@@ -72,6 +78,13 @@ func Test_AttachStorageFromDifferentWorkspace_ReturnsForbidden(t *testing.T) {
 	workspace2 := workspaces_testing.CreateTestWorkspace("Workspace 2", owner2, router)
 	storage := createTestStorage(workspace2.ID)
 
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		storages.RemoveTestStorage(storage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace1, router)
+		workspaces_testing.RemoveTestWorkspace(workspace2, router)
+	}()
+
 	timeOfDay := "04:00"
 	request := BackupConfig{
 		DatabaseID:       database.ID,
@@ -109,6 +122,12 @@ func Test_DeleteStorageWithAttachedDatabases_CannotDelete(t *testing.T) {
 
 	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
 	storage := createTestStorage(workspace.ID)
+
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		storages.RemoveTestStorage(storage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
 
 	timeOfDay := "04:00"
 	request := BackupConfig{
@@ -162,6 +181,13 @@ func Test_TransferStorageWithAttachedDatabase_CannotTransfer(t *testing.T) {
 
 	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
 	storage := createTestStorage(workspace.ID)
+
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		storages.RemoveTestStorage(storage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+		workspaces_testing.RemoveTestWorkspace(targetWorkspace, router)
+	}()
 
 	timeOfDay := "04:00"
 	request := BackupConfig{

@@ -91,6 +91,10 @@ func Test_CreateWorkspace_PermissionsEnforced(t *testing.T) {
 				assert.Equal(t, workspaceName, response.Name)
 				assert.NotEqual(t, uuid.Nil, response.ID)
 				assert.Equal(t, users_enums.WorkspaceRoleOwner, *response.UserRole)
+
+				// Cleanup created workspace
+				workspace := &workspaces_models.Workspace{ID: response.ID}
+				workspaces_testing.RemoveTestWorkspace(workspace, router)
 			} else {
 				resp := test_utils.MakePostRequest(
 					t,
@@ -160,11 +164,14 @@ func Test_GetUserWorkspaces_WhenUserHasWorkspaces_ReturnsWorkspacesList(t *testi
 		user.Token,
 		router,
 	)
+	defer workspaces_testing.RemoveTestWorkspace(workspace1, router)
+
 	workspace2, _ := workspaces_testing.CreateTestWorkspaceWithToken(
 		"Workspace 2",
 		user.Token,
 		router,
 	)
+	defer workspaces_testing.RemoveTestWorkspace(workspace2, router)
 
 	var response workspaces_dto.ListWorkspacesResponseDTO
 	test_utils.MakeGetRequestAndUnmarshal(
@@ -258,6 +265,7 @@ func Test_GetSingleWorkspace_PermissionsEnforced(t *testing.T) {
 				owner.Token,
 				router,
 			)
+			defer workspaces_testing.RemoveTestWorkspace(workspace, router)
 
 			var testUserToken string
 			if tt.isGlobalAdmin {
@@ -369,6 +377,7 @@ func Test_UpdateWorkspace_PermissionsEnforced(t *testing.T) {
 				owner.Token,
 				router,
 			)
+			defer workspaces_testing.RemoveTestWorkspace(workspace, router)
 
 			var testUserToken string
 			if tt.workspaceRole == users_enums.WorkspaceRoleOwner {
@@ -472,6 +481,10 @@ func Test_DeleteWorkspace_PermissionsEnforced(t *testing.T) {
 				owner.Token,
 				router,
 			)
+			// Only cleanup if the test doesn't successfully delete the workspace
+			if !tt.expectSuccess {
+				defer workspaces_testing.RemoveTestWorkspace(workspace, router)
+			}
 
 			var testUserToken string
 			if tt.isGlobalAdmin {
@@ -526,6 +539,7 @@ func Test_GetWorkspaceAuditLogs_WhenUserIsWorkspaceAdmin_ReturnsAuditLogs(t *tes
 		owner.Token,
 		router,
 	)
+	defer workspaces_testing.RemoveTestWorkspace(workspace, router)
 
 	workspaces_testing.AddMemberToWorkspace(
 		workspace,
@@ -565,11 +579,14 @@ func Test_GetWorkspaceAuditLogs_WithMultipleWorkspaces_ReturnsOnlyWorkspaceSpeci
 		owner1.Token,
 		router,
 	)
+	defer workspaces_testing.RemoveTestWorkspace(workspace1, router)
+
 	workspace2, _ := workspaces_testing.CreateTestWorkspaceWithToken(
 		workspaceName2,
 		owner2.Token,
 		router,
 	)
+	defer workspaces_testing.RemoveTestWorkspace(workspace2, router)
 
 	updateWorkspace1 := workspaces_models.Workspace{
 		Name: "Updated " + workspace1.Name,
@@ -656,6 +673,7 @@ func Test_GetWorkspaceAuditLogs_WithDifferentUserRoles_EnforcesPermissionsCorrec
 		owner.Token,
 		router,
 	)
+	defer workspaces_testing.RemoveTestWorkspace(workspace, router)
 
 	workspaces_testing.AddMemberToWorkspace(
 		workspace,
@@ -703,6 +721,7 @@ func Test_GetWorkspaceAuditLogs_WithoutAuthToken_ReturnsUnauthorized(t *testing.
 		owner.Token,
 		router,
 	)
+	defer workspaces_testing.RemoveTestWorkspace(workspace, router)
 
 	test_utils.MakeGetRequest(t, router,
 		"/api/v1/workspaces/"+workspace.ID.String()+"/audit-logs",

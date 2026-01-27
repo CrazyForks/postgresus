@@ -1653,6 +1653,10 @@ func Test_StorageSensitiveDataLifecycle_AllTypes(t *testing.T) {
 				&finalRetrieved,
 			)
 			tc.verifyHiddenData(t, &finalRetrieved)
+
+			// Cleanup
+			deleteStorage(t, router, createdStorage.ID, owner.Token)
+			workspaces_testing.RemoveTestWorkspace(workspace, router)
 		})
 	}
 }

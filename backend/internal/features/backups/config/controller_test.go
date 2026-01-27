@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -92,6 +93,11 @@ func Test_SaveBackupConfig_PermissionsEnforced(t *testing.T) {
 
 			database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
 
+			defer func() {
+				databases.RemoveTestDatabase(database)
+				workspaces_testing.RemoveTestWorkspace(workspace, router)
+			}()
+
 			var testUserToken string
 			if tt.isGlobalAdmin {
 				admin := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
@@ -154,6 +160,11 @@ func Test_SaveBackupConfig_WhenUserIsNotWorkspaceMember_ReturnsForbidden(t *test
 	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
 
 	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
+
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
 
 	nonMember := users_testing.CreateTestUser(users_enums.UserRoleMember)
 
@@ -245,6 +256,11 @@ func Test_GetBackupConfigByDbID_PermissionsEnforced(t *testing.T) {
 
 			database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
 
+			defer func() {
+				databases.RemoveTestDatabase(database)
+				workspaces_testing.RemoveTestWorkspace(workspace, router)
+			}()
+
 			var testUserToken string
 			if tt.isGlobalAdmin {
 				admin := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
@@ -293,6 +309,11 @@ func Test_GetBackupConfigByDbID_ReturnsDefaultConfigForNewDatabase(t *testing.T)
 
 	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
 
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
+
 	var response BackupConfig
 	test_utils.MakeGetRequestAndUnmarshal(
 		t,
@@ -331,6 +352,11 @@ func Test_GetDatabasePlan_ForNewDatabase_PlanAlwaysReturned(t *testing.T) {
 
 	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
 
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
+
 	var response plans.DatabasePlan
 	test_utils.MakeGetRequestAndUnmarshal(
 		t,
@@ -353,6 +379,11 @@ func Test_SaveBackupConfig_WhenPlanLimitsAreAdjusted_ValidationEnforced(t *testi
 	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
 
 	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
+
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
 
 	// Get plan via API (triggers auto-creation)
 	var plan plans.DatabasePlan
@@ -533,6 +564,10 @@ func Test_IsStorageUsing_PermissionsEnforced(t *testing.T) {
 			)
 			storage := createTestStorage(workspace.ID)
 
+			defer func() {
+				workspaces_testing.RemoveTestWorkspace(workspace, router)
+			}()
+
 			var testUserToken string
 			if tt.isStorageOwner {
 				testUserToken = storageOwner.Token
@@ -565,10 +600,6 @@ func Test_IsStorageUsing_PermissionsEnforced(t *testing.T) {
 				)
 				assert.Contains(t, string(testResp.Body), "error")
 			}
-
-			// Cleanup
-			storages.RemoveTestStorage(storage.ID)
-			workspaces_testing.RemoveTestWorkspace(workspace, router)
 		})
 	}
 }
@@ -579,6 +610,11 @@ func Test_SaveBackupConfig_WithEncryptionNone_ConfigSaved(t *testing.T) {
 	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
 
 	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
+
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
 
 	timeOfDay := "04:00"
 	request := BackupConfig{
@@ -618,6 +654,11 @@ func Test_SaveBackupConfig_WithEncryptionEncrypted_ConfigSaved(t *testing.T) {
 	workspace := workspaces_testing.CreateTestWorkspace("Test Workspace", owner, router)
 
 	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
+
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
 
 	timeOfDay := "04:00"
 	request := BackupConfig{
@@ -729,6 +770,15 @@ func Test_TransferDatabase_PermissionsEnforced(t *testing.T) {
 
 			targetStorage := createTestStorage(targetWorkspace.ID)
 
+			defer func() {
+				// Cleanup in correct order to avoid foreign key violations
+				databases.RemoveTestDatabase(database)
+				time.Sleep(50 * time.Millisecond) // Wait for cascade delete of backup_config
+				storages.RemoveTestStorage(targetStorage.ID)
+				workspaces_testing.RemoveTestWorkspace(sourceWorkspace, router)
+				workspaces_testing.RemoveTestWorkspace(targetWorkspace, router)
+			}()
+
 			var testUserToken string
 			if tt.isGlobalAdmin {
 				admin := users_testing.CreateTestUser(users_enums.UserRoleAdmin)
@@ -821,6 +871,12 @@ func Test_TransferDatabase_NonMemberInSourceWorkspace_CannotTransfer(t *testing.
 		router,
 	)
 
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		workspaces_testing.RemoveTestWorkspace(sourceWorkspace, router)
+		workspaces_testing.RemoveTestWorkspace(targetWorkspace, router)
+	}()
+
 	request := TransferDatabaseRequest{
 		TargetWorkspaceID: targetWorkspace.ID,
 	}
@@ -861,6 +917,12 @@ func Test_TransferDatabase_NonMemberInTargetWorkspace_CannotTransfer(t *testing.
 		router,
 	)
 
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		workspaces_testing.RemoveTestWorkspace(sourceWorkspace, router)
+		workspaces_testing.RemoveTestWorkspace(targetWorkspace, router)
+	}()
+
 	request := TransferDatabaseRequest{
 		TargetWorkspaceID: targetWorkspace.ID,
 	}
@@ -887,6 +949,13 @@ func Test_TransferDatabase_ToNewStorage_DatabaseTransferd(t *testing.T) {
 	database := createTestDatabaseViaAPI("Test Database", sourceWorkspace.ID, owner.Token, router)
 	sourceStorage := createTestStorage(sourceWorkspace.ID)
 	targetStorage := createTestStorage(targetWorkspace.ID)
+
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		time.Sleep(200 * time.Millisecond) // Wait for cascading deletes
+		workspaces_testing.RemoveTestWorkspace(sourceWorkspace, router)
+		workspaces_testing.RemoveTestWorkspace(targetWorkspace, router)
+	}()
 
 	timeOfDay := "04:00"
 	backupConfigRequest := BackupConfig{
@@ -966,6 +1035,13 @@ func Test_TransferDatabase_WithExistingStorage_DatabaseAndStorageTransferd(t *te
 
 	database := createTestDatabaseViaAPI("Test Database", sourceWorkspace.ID, owner.Token, router)
 	storage := createTestStorage(sourceWorkspace.ID)
+
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		time.Sleep(200 * time.Millisecond) // Wait for cascading deletes
+		workspaces_testing.RemoveTestWorkspace(sourceWorkspace, router)
+		workspaces_testing.RemoveTestWorkspace(targetWorkspace, router)
+	}()
 
 	timeOfDay := "04:00"
 	backupConfigRequest := BackupConfig{
@@ -1056,6 +1132,14 @@ func Test_TransferDatabase_StorageHasOtherDBs_CannotTransfer(t *testing.T) {
 	)
 	storage := createTestStorage(sourceWorkspace.ID)
 
+	defer func() {
+		databases.RemoveTestDatabase(database1)
+		databases.RemoveTestDatabase(database2)
+		time.Sleep(200 * time.Millisecond) // Wait for cascading deletes
+		workspaces_testing.RemoveTestWorkspace(sourceWorkspace, router)
+		workspaces_testing.RemoveTestWorkspace(targetWorkspace, router)
+	}()
+
 	timeOfDay := "04:00"
 	backupConfigRequest1 := BackupConfig{
 		DatabaseID:       database1.ID,
@@ -1137,6 +1221,14 @@ func Test_TransferDatabase_WithNotifiers_NotifiersTransferred(t *testing.T) {
 	sourceStorage := createTestStorage(sourceWorkspace.ID)
 	targetStorage := createTestStorage(targetWorkspace.ID)
 	notifier := notifiers.CreateTestNotifier(sourceWorkspace.ID)
+
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		time.Sleep(200 * time.Millisecond)
+		notifiers.RemoveTestNotifier(notifier)
+		workspaces_testing.RemoveTestWorkspace(sourceWorkspace, router)
+		workspaces_testing.RemoveTestWorkspace(targetWorkspace, router)
+	}()
 
 	database.Notifiers = []notifiers.Notifier{*notifier}
 	var updatedDatabase databases.Database
@@ -1240,6 +1332,15 @@ func Test_TransferDatabase_NotifierHasOtherDBs_NotifierSkipped(t *testing.T) {
 	sourceStorage := createTestStorage(sourceWorkspace.ID)
 	targetStorage := createTestStorage(targetWorkspace.ID)
 	sharedNotifier := notifiers.CreateTestNotifier(sourceWorkspace.ID)
+
+	defer func() {
+		databases.RemoveTestDatabase(database1)
+		databases.RemoveTestDatabase(database2)
+		time.Sleep(200 * time.Millisecond)
+		notifiers.RemoveTestNotifier(sharedNotifier)
+		workspaces_testing.RemoveTestWorkspace(sourceWorkspace, router)
+		workspaces_testing.RemoveTestWorkspace(targetWorkspace, router)
+	}()
 
 	database1.Notifiers = []notifiers.Notifier{*sharedNotifier}
 	test_utils.MakePostRequest(
@@ -1353,6 +1454,16 @@ func Test_TransferDatabase_WithMultipleNotifiers_OnlyExclusiveOnesTransferred(t 
 	exclusiveNotifier := notifiers.CreateTestNotifier(sourceWorkspace.ID)
 	sharedNotifier := notifiers.CreateTestNotifier(sourceWorkspace.ID)
 
+	defer func() {
+		databases.RemoveTestDatabase(database1)
+		databases.RemoveTestDatabase(database2)
+		time.Sleep(200 * time.Millisecond)
+		notifiers.RemoveTestNotifier(exclusiveNotifier)
+		notifiers.RemoveTestNotifier(sharedNotifier)
+		workspaces_testing.RemoveTestWorkspace(sourceWorkspace, router)
+		workspaces_testing.RemoveTestWorkspace(targetWorkspace, router)
+	}()
+
 	database1.Notifiers = []notifiers.Notifier{*exclusiveNotifier, *sharedNotifier}
 	test_utils.MakePostRequest(
 		t,
@@ -1464,6 +1575,14 @@ func Test_TransferDatabase_WithTargetNotifiers_NotifiersAssigned(t *testing.T) {
 	targetStorage := createTestStorage(targetWorkspace.ID)
 	targetNotifier := notifiers.CreateTestNotifier(targetWorkspace.ID)
 
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		time.Sleep(200 * time.Millisecond)
+		notifiers.RemoveTestNotifier(targetNotifier)
+		workspaces_testing.RemoveTestWorkspace(sourceWorkspace, router)
+		workspaces_testing.RemoveTestWorkspace(targetWorkspace, router)
+	}()
+
 	timeOfDay := "04:00"
 	backupConfigRequest := BackupConfig{
 		DatabaseID:       database.ID,
@@ -1535,6 +1654,15 @@ func Test_TransferDatabase_TargetNotifierFromDifferentWorkspace_ReturnsBadReques
 	targetStorage := createTestStorage(targetWorkspace.ID)
 	wrongNotifier := notifiers.CreateTestNotifier(otherWorkspace.ID)
 
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		time.Sleep(200 * time.Millisecond)
+		notifiers.RemoveTestNotifier(wrongNotifier)
+		workspaces_testing.RemoveTestWorkspace(sourceWorkspace, router)
+		workspaces_testing.RemoveTestWorkspace(targetWorkspace, router)
+		workspaces_testing.RemoveTestWorkspace(otherWorkspace, router)
+	}()
+
 	timeOfDay := "04:00"
 	backupConfigRequest := BackupConfig{
 		DatabaseID:       database.ID,
@@ -1591,6 +1719,14 @@ func Test_TransferDatabase_TargetStorageFromDifferentWorkspace_ReturnsBadRequest
 	database := createTestDatabaseViaAPI("Test Database", sourceWorkspace.ID, owner.Token, router)
 	sourceStorage := createTestStorage(sourceWorkspace.ID)
 	wrongStorage := createTestStorage(otherWorkspace.ID)
+
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		time.Sleep(200 * time.Millisecond)
+		workspaces_testing.RemoveTestWorkspace(sourceWorkspace, router)
+		workspaces_testing.RemoveTestWorkspace(targetWorkspace, router)
+		workspaces_testing.RemoveTestWorkspace(otherWorkspace, router)
+	}()
 
 	timeOfDay := "04:00"
 	backupConfigRequest := BackupConfig{
@@ -1737,7 +1873,12 @@ func Test_SaveBackupConfig_WithSystemStorage_CanBeUsedByAnyDatabase(t *testing.T
 	assert.Equal(t, savedSystemStorage.ID, *savedConfig.StorageID)
 	assert.True(t, savedConfig.IsBackupsEnabled)
 
+	// Cleanup: database first (cascades to backup_config), then storages, then workspaces
+	databases.RemoveTestDatabase(databaseA)
 	storages.RemoveTestStorage(regularStorageB.ID)
+	storages.RemoveTestStorage(savedSystemStorage.ID)
+	workspaces_testing.RemoveTestWorkspace(workspaceA, router)
+	workspaces_testing.RemoveTestWorkspace(workspaceB, router)
 }
 
 func createTestDatabaseViaAPI(

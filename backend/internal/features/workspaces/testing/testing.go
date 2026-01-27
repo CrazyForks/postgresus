@@ -375,7 +375,13 @@ func RemoveTestWorkspace(workspace *workspaces_models.Workspace, router *gin.Eng
 	membershipRepo := &workspaces_repositories.MembershipRepository{}
 	workspaceMembers, err := membershipRepo.GetWorkspaceMembers(workspace.ID)
 	if err != nil {
-		panic("Failed to get workspace members: " + err.Error())
+		// Workspace might already be deleted or doesn't exist, silently return
+		return
+	}
+
+	if len(workspaceMembers) == 0 {
+		// No members found, workspace might have been deleted, silently return
+		return
 	}
 
 	var ownerToken string
@@ -385,12 +391,16 @@ func RemoveTestWorkspace(workspace *workspaces_models.Workspace, router *gin.Eng
 
 			owner, err := userService.GetUserByID(m.UserID)
 			if err != nil {
-				panic("Failed to get owner user: " + err.Error())
+				// Owner user not found, workspace might be in inconsistent state, try direct deletion
+				_ = RemoveTestWorkspaceDirect(workspace.ID)
+				return
 			}
 
 			tokenResponse, err := userService.GenerateAccessToken(owner)
 			if err != nil {
-				panic("Failed to generate owner token: " + err.Error())
+				// Cannot generate token, try direct deletion
+				_ = RemoveTestWorkspaceDirect(workspace.ID)
+				return
 			}
 
 			ownerToken = tokenResponse.Token
@@ -399,7 +409,9 @@ func RemoveTestWorkspace(workspace *workspaces_models.Workspace, router *gin.Eng
 	}
 
 	if ownerToken == "" {
-		panic("No workspace owner found")
+		// No owner found, try direct deletion
+		_ = RemoveTestWorkspaceDirect(workspace.ID)
+		return
 	}
 
 	DeleteWorkspace(workspace, ownerToken, router)

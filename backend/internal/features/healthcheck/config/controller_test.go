@@ -130,6 +130,10 @@ func Test_SaveHealthcheckConfig_PermissionsEnforced(t *testing.T) {
 				)
 				assert.Contains(t, string(testResp.Body), "insufficient permissions")
 			}
+
+			// Cleanup
+			databases.RemoveTestDatabase(database)
+			workspaces_testing.RemoveTestWorkspace(workspace, router)
 		})
 	}
 }
@@ -162,6 +166,10 @@ func Test_SaveHealthcheckConfig_WhenUserIsNotWorkspaceMember_ReturnsForbidden(t 
 	)
 
 	assert.Contains(t, string(testResp.Body), "insufficient permissions")
+
+	// Cleanup
+	databases.RemoveTestDatabase(database)
+	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
 
 func Test_GetHealthcheckConfig_PermissionsEnforced(t *testing.T) {
@@ -268,6 +276,10 @@ func Test_GetHealthcheckConfig_PermissionsEnforced(t *testing.T) {
 				)
 				assert.Contains(t, string(testResp.Body), "insufficient permissions")
 			}
+
+			// Cleanup
+			databases.RemoveTestDatabase(database)
+			workspaces_testing.RemoveTestWorkspace(workspace, router)
 		})
 	}
 }
@@ -295,6 +307,10 @@ func Test_GetHealthcheckConfig_ReturnsDefaultConfigForNewDatabase(t *testing.T) 
 	assert.Equal(t, 1, response.IntervalMinutes)
 	assert.Equal(t, 3, response.AttemptsBeforeConcideredAsDown)
 	assert.Equal(t, 7, response.StoreAttemptsDays)
+
+	// Cleanup
+	databases.RemoveTestDatabase(database)
+	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
 
 func createTestDatabaseViaAPI(
