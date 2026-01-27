@@ -26,6 +26,12 @@ func Test_AttachNotifierFromSameWorkspace_SuccessfullyAttached(t *testing.T) {
 	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
 	notifier := notifiers.CreateTestNotifier(workspace.ID)
 
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		notifiers.RemoveTestNotifier(notifier)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
+
 	database.Notifiers = []notifiers.Notifier{*notifier}
 
 	var response databases.Database
@@ -55,6 +61,13 @@ func Test_AttachNotifierFromDifferentWorkspace_ReturnsForbidden(t *testing.T) {
 	workspace2 := workspaces_testing.CreateTestWorkspace("Workspace 2", owner2, router)
 	notifier := notifiers.CreateTestNotifier(workspace2.ID)
 
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		notifiers.RemoveTestNotifier(notifier)
+		workspaces_testing.RemoveTestWorkspace(workspace1, router)
+		workspaces_testing.RemoveTestWorkspace(workspace2, router)
+	}()
+
 	database.Notifiers = []notifiers.Notifier{*notifier}
 
 	testResp := test_utils.MakePostRequest(
@@ -76,6 +89,12 @@ func Test_DeleteNotifierWithAttachedDatabases_CannotDelete(t *testing.T) {
 
 	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
 	notifier := notifiers.CreateTestNotifier(workspace.ID)
+
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		notifiers.RemoveTestNotifier(notifier)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
 
 	database.Notifiers = []notifiers.Notifier{*notifier}
 
@@ -113,6 +132,13 @@ func Test_TransferNotifierWithAttachedDatabase_CannotTransfer(t *testing.T) {
 
 	database := createTestDatabaseViaAPI("Test Database", workspace.ID, owner.Token, router)
 	notifier := notifiers.CreateTestNotifier(workspace.ID)
+
+	defer func() {
+		databases.RemoveTestDatabase(database)
+		notifiers.RemoveTestNotifier(notifier)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+		workspaces_testing.RemoveTestWorkspace(targetWorkspace, router)
+	}()
 
 	database.Notifiers = []notifiers.Notifier{*notifier}
 

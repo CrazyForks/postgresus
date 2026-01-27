@@ -144,6 +144,10 @@ func Test_GetAttemptsByDatabase_PermissionsEnforced(t *testing.T) {
 				)
 				assert.Contains(t, string(testResp.Body), "forbidden")
 			}
+
+			// Cleanup
+			databases.RemoveTestDatabase(database)
+			workspaces_testing.RemoveTestWorkspace(workspace, router)
 		})
 	}
 }
@@ -181,6 +185,10 @@ func Test_GetAttemptsByDatabase_FiltersByAfterDate(t *testing.T) {
 	for _, attempt := range response {
 		assert.True(t, attempt.CreatedAt.After(afterDate) || attempt.CreatedAt.Equal(afterDate))
 	}
+
+	// Cleanup
+	databases.RemoveTestDatabase(database)
+	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
 
 func Test_GetAttemptsByDatabase_ReturnsEmptyListForNewDatabase(t *testing.T) {
@@ -201,6 +209,10 @@ func Test_GetAttemptsByDatabase_ReturnsEmptyListForNewDatabase(t *testing.T) {
 	)
 
 	assert.Equal(t, 0, len(response))
+
+	// Cleanup
+	databases.RemoveTestDatabase(database)
+	workspaces_testing.RemoveTestWorkspace(workspace, router)
 }
 
 func createTestDatabaseViaAPI(

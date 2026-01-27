@@ -103,49 +103,6 @@ func (s *BackupsScheduler) IsSchedulerRunning() bool {
 	return s.lastBackupTime.After(time.Now().UTC().Add(-schedulerHealthcheckThreshold))
 }
 
-func (s *BackupsScheduler) failBackupsInProgress() error {
-	backupsInProgress, err := s.backupRepository.FindByStatus(backups_core.BackupStatusInProgress)
-	if err != nil {
-		return err
-	}
-
-	for _, backup := range backupsInProgress {
-		if err := s.taskCancelManager.CancelTask(backup.ID); err != nil {
-			s.logger.Error(
-				"Failed to cancel backup via task cancel manager",
-				"backupId",
-				backup.ID,
-				"error",
-				err,
-			)
-		}
-
-		backupConfig, err := s.backupConfigService.GetBackupConfigByDbId(backup.DatabaseID)
-		if err != nil {
-			s.logger.Error("Failed to get backup config by database ID", "error", err)
-			continue
-		}
-
-		failMessage := "Backup failed due to application restart"
-		backup.FailMessage = &failMessage
-		backup.Status = backups_core.BackupStatusFailed
-		backup.BackupSizeMb = 0
-
-		s.backuperNode.SendBackupNotification(
-			backupConfig,
-			backup,
-			backups_config.NotificationBackupFailed,
-			&failMessage,
-		)
-
-		if err := s.backupRepository.Save(backup); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func (s *BackupsScheduler) StartBackup(databaseID uuid.UUID, isCallNotifier bool) {
 	backupConfig, err := s.backupConfigService.GetBackupConfigByDbId(databaseID)
 	if err != nil {
@@ -197,6 +154,7 @@ func (s *BackupsScheduler) StartBackup(databaseID uuid.UUID, isCallNotifier bool
 		return
 	}
 
+	fmt.Println("make backup")
 	backup := &backups_core.Backup{
 		DatabaseID:   backupConfig.DatabaseID,
 		StorageID:    *backupConfig.StorageID,
@@ -363,6 +321,49 @@ func (s *BackupsScheduler) runPendingBackups() error {
 
 			s.StartBackup(backupConfig.DatabaseID, remainedBackupTryCount == 1)
 			continue
+		}
+	}
+
+	return nil
+}
+
+func (s *BackupsScheduler) failBackupsInProgress() error {
+	backupsInProgress, err := s.backupRepository.FindByStatus(backups_core.BackupStatusInProgress)
+	if err != nil {
+		return err
+	}
+
+	for _, backup := range backupsInProgress {
+		if err := s.taskCancelManager.CancelTask(backup.ID); err != nil {
+			s.logger.Error(
+				"Failed to cancel backup via task cancel manager",
+				"backupId",
+				backup.ID,
+				"error",
+				err,
+			)
+		}
+
+		backupConfig, err := s.backupConfigService.GetBackupConfigByDbId(backup.DatabaseID)
+		if err != nil {
+			s.logger.Error("Failed to get backup config by database ID", "error", err)
+			continue
+		}
+
+		failMessage := "Backup failed due to application restart"
+		backup.FailMessage = &failMessage
+		backup.Status = backups_core.BackupStatusFailed
+		backup.BackupSizeMb = 0
+
+		s.backuperNode.SendBackupNotification(
+			backupConfig,
+			backup,
+			backups_config.NotificationBackupFailed,
+			&failMessage,
+		)
+
+		if err := s.backupRepository.Save(backup); err != nil {
+			return err
 		}
 	}
 

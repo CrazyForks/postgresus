@@ -46,8 +46,8 @@ func LoadMainDb() {
 		os.Exit(1)
 	}
 
-	sqlDB.SetMaxOpenConns(20)
-	sqlDB.SetMaxIdleConns(20)
+	sqlDB.SetMaxOpenConns(10)
+	sqlDB.SetMaxIdleConns(10)
 
 	db = database
 

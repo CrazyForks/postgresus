@@ -384,6 +384,32 @@ SQL
 
 # Start the main application
 echo "Starting Databasus application..."
+
+# Check and warn about external database/Valkey usage
+if [ -n "\${DANGEROUS_EXTERNAL_DATABASE_DSN:-}" ]; then
+    echo ""
+    echo "=========================================="
+    echo "WARNING: Using external database"
+    echo "=========================================="
+    echo "DANGEROUS_EXTERNAL_DATABASE_DSN is set."
+    echo "Application will connect to external PostgreSQL instead of internal instance."
+    echo "Internal PostgreSQL is still running in the background."
+    echo "=========================================="
+    echo ""
+fi
+
+if [ -n "\${DANGEROUS_VALKEY_HOST:-}" ]; then
+    echo ""
+    echo "=========================================="
+    echo "WARNING: Using external Valkey"
+    echo "=========================================="
+    echo "DANGEROUS_VALKEY_HOST is set."
+    echo "Application will connect to external Valkey instead of internal instance."
+    echo "Internal Valkey is still running in the background."
+    echo "=========================================="
+    echo ""
+fi
+
 exec ./main
 EOF
 

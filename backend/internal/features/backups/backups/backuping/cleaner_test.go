@@ -28,6 +28,19 @@ func Test_CleanOldBackups_DeletesBackupsOlderThanStorePeriod(t *testing.T) {
 	notifier := notifiers.CreateTestNotifier(workspace.ID)
 	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
 
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		notifiers.RemoveTestNotifier(notifier)
+		storages.RemoveTestStorage(storage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
+
 	// Create backup interval
 	interval := createTestInterval()
 
@@ -96,6 +109,19 @@ func Test_CleanOldBackups_SkipsDatabaseWithForeverStorePeriod(t *testing.T) {
 	notifier := notifiers.CreateTestNotifier(workspace.ID)
 	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
 
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		notifiers.RemoveTestNotifier(notifier)
+		storages.RemoveTestStorage(storage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
+
 	// Create backup interval
 	interval := createTestInterval()
 
@@ -141,6 +167,19 @@ func Test_CleanExceededBackups_WhenUnderLimit_NoBackupsDeleted(t *testing.T) {
 	storage := storages.CreateTestStorage(workspace.ID)
 	notifier := notifiers.CreateTestNotifier(workspace.ID)
 	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
+
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		notifiers.RemoveTestNotifier(notifier)
+		storages.RemoveTestStorage(storage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
 
 	// Create backup interval
 	interval := createTestInterval()
@@ -189,6 +228,19 @@ func Test_CleanExceededBackups_WhenOverLimit_DeletesOldestBackups(t *testing.T) 
 	storage := storages.CreateTestStorage(workspace.ID)
 	notifier := notifiers.CreateTestNotifier(workspace.ID)
 	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
+
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		notifiers.RemoveTestNotifier(notifier)
+		storages.RemoveTestStorage(storage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
 
 	// Create backup interval
 	interval := createTestInterval()
@@ -251,6 +303,19 @@ func Test_CleanExceededBackups_SkipsInProgressBackups(t *testing.T) {
 	storage := storages.CreateTestStorage(workspace.ID)
 	notifier := notifiers.CreateTestNotifier(workspace.ID)
 	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
+
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		notifiers.RemoveTestNotifier(notifier)
+		storages.RemoveTestStorage(storage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
 
 	// Create backup interval
 	interval := createTestInterval()
@@ -328,6 +393,19 @@ func Test_CleanExceededBackups_WithZeroLimit_SkipsDatabase(t *testing.T) {
 	notifier := notifiers.CreateTestNotifier(workspace.ID)
 	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
 
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		notifiers.RemoveTestNotifier(notifier)
+		storages.RemoveTestStorage(storage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
+
 	// Create backup interval
 	interval := createTestInterval()
 
@@ -375,6 +453,19 @@ func Test_GetTotalSizeByDatabase_CalculatesCorrectly(t *testing.T) {
 	storage := storages.CreateTestStorage(workspace.ID)
 	notifier := notifiers.CreateTestNotifier(workspace.ID)
 	database := databases.CreateTestDatabase(workspace.ID, storage, notifier)
+
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		notifiers.RemoveTestNotifier(notifier)
+		storages.RemoveTestStorage(storage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
 
 	// Create completed backups
 	completedBackup1 := &backups_core.Backup{
@@ -453,6 +544,19 @@ func Test_DeleteBackup_WhenStorageDeleteFails_BackupStillRemovedFromDatabase(t *
 	testStorage := storages.CreateTestStorage(workspace.ID)
 	notifier := notifiers.CreateTestNotifier(workspace.ID)
 	database := databases.CreateTestDatabase(workspace.ID, testStorage, notifier)
+
+	defer func() {
+		backups, _ := backupRepository.FindByDatabaseID(database.ID)
+		for _, backup := range backups {
+			backupRepository.DeleteByID(backup.ID)
+		}
+
+		databases.RemoveTestDatabase(database)
+		time.Sleep(50 * time.Millisecond)
+		notifiers.RemoveTestNotifier(notifier)
+		storages.RemoveTestStorage(testStorage.ID)
+		workspaces_testing.RemoveTestWorkspace(workspace, router)
+	}()
 
 	backup := &backups_core.Backup{
 		ID:           uuid.New(),
