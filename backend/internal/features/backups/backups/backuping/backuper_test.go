@@ -37,7 +37,7 @@ func Test_BackupExecuted_NotificationSent(t *testing.T) {
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond) // Wait for cascading deletes
+		time.Sleep(100 * time.Millisecond) // Wait for cascading deletes
 		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -171,7 +171,7 @@ func Test_BackupSizeLimits(t *testing.T) {
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond) // Wait for cascading deletes
+		time.Sleep(100 * time.Millisecond) // Wait for cascading deletes
 		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)

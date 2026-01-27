@@ -41,7 +41,7 @@ func Test_RunPendingBackups_WhenLastBackupWasYesterday_CreatesNewBackup(t *testi
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		storages.RemoveTestStorage(storage.ID)
 		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -110,7 +110,7 @@ func Test_RunPendingBackups_WhenLastBackupWasRecentlyCompleted_SkipsBackup(t *te
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		storages.RemoveTestStorage(storage.ID)
 		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -178,7 +178,7 @@ func Test_RunPendingBackups_WhenLastBackupFailedAndRetriesDisabled_SkipsBackup(t
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		storages.RemoveTestStorage(storage.ID)
 		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -250,7 +250,7 @@ func Test_RunPendingBackups_WhenLastBackupFailedAndRetriesEnabled_CreatesNewBack
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		storages.RemoveTestStorage(storage.ID)
 		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -323,7 +323,7 @@ func Test_RunPendingBackups_WhenFailedBackupsExceedMaxRetries_SkipsBackup(t *tes
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		storages.RemoveTestStorage(storage.ID)
 		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -395,7 +395,7 @@ func Test_RunPendingBackups_WhenBackupsDisabled_SkipsBackup(t *testing.T) {
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		storages.RemoveTestStorage(storage.ID)
 		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -458,7 +458,7 @@ func Test_CheckDeadNodesAndFailBackups_WhenNodeDies_FailsBackupAndCleansUpRegist
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		storages.RemoveTestStorage(storage.ID)
 		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -561,7 +561,7 @@ func Test_OnBackupCompleted_WhenTaskIsNotBackup_SkipsProcessing(t *testing.T) {
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		storages.RemoveTestStorage(storage.ID)
 		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -742,7 +742,7 @@ func Test_FailBackupsInProgress_WhenSchedulerStarts_CancelsBackupsAndUpdatesStat
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		storages.RemoveTestStorage(storage.ID)
 		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -857,7 +857,7 @@ func Test_StartBackup_WhenBackupCompletes_DecrementsActiveTaskCount(t *testing.T
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		storages.RemoveTestStorage(storage.ID)
 		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -953,7 +953,7 @@ func Test_StartBackup_WhenBackupFails_DecrementsActiveTaskCount(t *testing.T) {
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		storages.RemoveTestStorage(storage.ID)
 		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -1054,7 +1054,7 @@ func Test_StartBackup_WhenBackupAlreadyInProgress_SkipsNewBackup(t *testing.T) {
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		storages.RemoveTestStorage(storage.ID)
 		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -1124,7 +1124,7 @@ func Test_RunPendingBackups_WhenLastBackupFailedWithIsSkipRetry_SkipsBackupEvenW
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		storages.RemoveTestStorage(storage.ID)
 		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -1225,7 +1225,7 @@ func Test_StartBackup_When2BackupsStartedForDifferentDatabases_BothUseCasesAreCa
 
 		databases.RemoveTestDatabase(database1)
 		databases.RemoveTestDatabase(database2)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		storages.RemoveTestStorage(storage.ID)
 		notifiers.RemoveTestNotifier(notifier)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
