@@ -35,7 +35,7 @@ func Test_CleanOldBackups_DeletesBackupsOlderThanStorePeriod(t *testing.T) {
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -116,7 +116,7 @@ func Test_CleanOldBackups_SkipsDatabaseWithForeverStorePeriod(t *testing.T) {
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -175,7 +175,7 @@ func Test_CleanExceededBackups_WhenUnderLimit_NoBackupsDeleted(t *testing.T) {
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -236,7 +236,7 @@ func Test_CleanExceededBackups_WhenOverLimit_DeletesOldestBackups(t *testing.T) 
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -311,7 +311,7 @@ func Test_CleanExceededBackups_SkipsInProgressBackups(t *testing.T) {
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -400,7 +400,7 @@ func Test_CleanExceededBackups_WithZeroLimit_SkipsDatabase(t *testing.T) {
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -461,7 +461,7 @@ func Test_GetTotalSizeByDatabase_CalculatesCorrectly(t *testing.T) {
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(storage.ID)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)
@@ -552,7 +552,7 @@ func Test_DeleteBackup_WhenStorageDeleteFails_BackupStillRemovedFromDatabase(t *
 		}
 
 		databases.RemoveTestDatabase(database)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		notifiers.RemoveTestNotifier(notifier)
 		storages.RemoveTestStorage(testStorage.ID)
 		workspaces_testing.RemoveTestWorkspace(workspace, router)

@@ -773,7 +773,7 @@ func Test_TransferDatabase_PermissionsEnforced(t *testing.T) {
 			defer func() {
 				// Cleanup in correct order to avoid foreign key violations
 				databases.RemoveTestDatabase(database)
-				time.Sleep(100 * time.Millisecond) // Wait for cascade delete of backup_config
+				time.Sleep(50 * time.Millisecond) // Wait for cascade delete of backup_config
 				storages.RemoveTestStorage(targetStorage.ID)
 				workspaces_testing.RemoveTestWorkspace(sourceWorkspace, router)
 				workspaces_testing.RemoveTestWorkspace(targetWorkspace, router)
