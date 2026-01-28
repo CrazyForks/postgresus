@@ -2,7 +2,9 @@ package workspaces_services
 
 import (
 	"fmt"
+	"log/slog"
 
+	"databasus-backend/internal/config"
 	audit_logs "databasus-backend/internal/features/audit_logs"
 	users_dto "databasus-backend/internal/features/users/dto"
 	users_enums "databasus-backend/internal/features/users/enums"
@@ -10,6 +12,7 @@ import (
 	users_services "databasus-backend/internal/features/users/services"
 	workspaces_dto "databasus-backend/internal/features/workspaces/dto"
 	workspaces_errors "databasus-backend/internal/features/workspaces/errors"
+	workspaces_interfaces "databasus-backend/internal/features/workspaces/interfaces"
 	workspaces_models "databasus-backend/internal/features/workspaces/models"
 	workspaces_repositories "databasus-backend/internal/features/workspaces/repositories"
 
@@ -23,6 +26,8 @@ type MembershipService struct {
 	auditLogService      *audit_logs.AuditLogService
 	workspaceService     *WorkspaceService
 	settingsService      *users_services.SettingsService
+	emailSender          workspaces_interfaces.EmailSender
+	logger               *slog.Logger
 }
 
 func (s *MembershipService) GetMembers(
@@ -77,6 +82,12 @@ func (s *MembershipService) AddMember(
 			return nil, workspaces_errors.ErrInsufficientPermissionsToInviteUsers
 		}
 
+		// Get workspace details for email
+		workspace, err := s.workspaceRepository.GetWorkspaceByID(workspaceID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get workspace: %w", err)
+		}
+
 		inviteRequest := &users_dto.InviteUserRequestDTO{
 			Email:                 request.Email,
 			IntendedWorkspaceID:   &workspaceID,
@@ -86,6 +97,14 @@ func (s *MembershipService) AddMember(
 		inviteResponse, err := s.userService.InviteUser(inviteRequest, addedBy)
 		if err != nil {
 			return nil, err
+		}
+
+		// Send invitation email
+		subject := fmt.Sprintf("You've been invited to %s workspace", workspace.Name)
+		body := s.buildInvitationEmailHTML(workspace.Name, addedBy.Name, string(request.Role))
+
+		if err := s.emailSender.SendEmail(request.Email, subject, body); err != nil {
+			s.logger.Error("Failed to send invitation email", "email", request.Email, "error", err)
 		}
 
 		membership := &workspaces_models.WorkspaceMembership{
@@ -338,4 +357,49 @@ func (s *MembershipService) validateCanManageMembership(
 	}
 
 	return nil
+}
+
+func (s *MembershipService) buildInvitationEmailHTML(
+	workspaceName, inviterName, role string,
+) string {
+	env := config.GetEnv()
+	signUpLink := ""
+	if env.DatabasusURL != "" {
+		signUpLink = fmt.Sprintf(`<p style="margin: 20px 0;">
+			<a href="%s/sign-up" style="display: inline-block; padding: 12px 24px; background-color: #0d6efd; color: white; text-decoration: none; border-radius: 4px;">
+				Sign up
+			</a>
+		</p>`, env.DatabasusURL)
+	} else {
+		signUpLink = `<p style="margin: 20px 0; color: #666;">
+			Please visit your Databasus instance to sign up and access the workspace.
+		</p>`
+	}
+
+	return fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+	<div style="background-color: #f8f9fa; border-radius: 8px; padding: 30px; margin: 20px 0;">
+		<h1 style="color: #0d6efd; margin-top: 0;">Workspace Invitation</h1>
+		
+		<p style="font-size: 16px; margin: 20px 0;">
+			<strong>%s</strong> has invited you to join the <strong>%s</strong> workspace as a <strong>%s</strong>.
+		</p>
+		
+		%s
+		
+		<hr style="border: none; border-top: 1px solid #dee2e6; margin: 30px 0;">
+		
+		<p style="font-size: 14px; color: #6c757d; margin: 0;">
+			This is an automated message from Databasus. If you didn't expect this invitation, you can safely ignore this email.
+		</p>
+	</div>
+</body>
+</html>
+	`, inviterName, workspaceName, role, signUpLink)
 }

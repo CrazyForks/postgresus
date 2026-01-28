@@ -253,13 +253,22 @@ PG_BIN="/usr/lib/postgresql/17/bin"
 
 # Generate runtime configuration for frontend
 echo "Generating runtime configuration..."
+
+# Detect if email is configured (both SMTP_HOST and DATABASUS_URL must be set)
+if [ -n "\${SMTP_HOST:-}" ] && [ -n "\${DATABASUS_URL:-}" ]; then
+  IS_EMAIL_CONFIGURED="true"
+else
+  IS_EMAIL_CONFIGURED="false"
+fi
+
 cat > /app/ui/build/runtime-config.js <<JSEOF
 // Runtime configuration injected at container startup
 // This file is generated dynamically and should not be edited manually
 window.__RUNTIME_CONFIG__ = {
   IS_CLOUD: '\${IS_CLOUD:-false}',
   GITHUB_CLIENT_ID: '\${GITHUB_CLIENT_ID:-}',
-  GOOGLE_CLIENT_ID: '\${GOOGLE_CLIENT_ID:-}'
+  GOOGLE_CLIENT_ID: '\${GOOGLE_CLIENT_ID:-}',
+  IS_EMAIL_CONFIGURED: '\$IS_EMAIL_CONFIGURED'
 };
 JSEOF
 

@@ -7,6 +7,8 @@ import { PlaygroundWarningComponent } from '../features/playground';
 import {
   AdminPasswordComponent,
   AuthNavbarComponent,
+  RequestResetPasswordComponent,
+  ResetPasswordComponent,
   SignInComponent,
   SignUpComponent,
 } from '../features/users';
@@ -14,7 +16,10 @@ import { useScreenHeight } from '../shared/hooks';
 
 export function AuthPageComponent() {
   const [isAdminHasPassword, setIsAdminHasPassword] = useState(false);
-  const [authMode, setAuthMode] = useState<'signIn' | 'signUp'>('signUp');
+  const [authMode, setAuthMode] = useState<'signIn' | 'signUp' | 'requestReset' | 'resetPassword'>(
+    'signUp',
+  );
+  const [resetEmail, setResetEmail] = useState('');
   const [isLoading, setLoading] = useState(true);
   const screenHeight = useScreenHeight();
 
@@ -51,8 +56,25 @@ export function AuthPageComponent() {
               {isAdminHasPassword ? (
                 authMode === 'signUp' ? (
                   <SignUpComponent onSwitchToSignIn={() => setAuthMode('signIn')} />
+                ) : authMode === 'signIn' ? (
+                  <SignInComponent
+                    onSwitchToSignUp={() => setAuthMode('signUp')}
+                    onSwitchToResetPassword={() => setAuthMode('requestReset')}
+                  />
+                ) : authMode === 'requestReset' ? (
+                  <RequestResetPasswordComponent
+                    onSwitchToSignIn={() => setAuthMode('signIn')}
+                    onSwitchToResetPassword={(email) => {
+                      setResetEmail(email);
+                      setAuthMode('resetPassword');
+                    }}
+                  />
                 ) : (
-                  <SignInComponent onSwitchToSignUp={() => setAuthMode('signUp')} />
+                  <ResetPasswordComponent
+                    onSwitchToSignIn={() => setAuthMode('signIn')}
+                    onSwitchToRequestCode={() => setAuthMode('requestReset')}
+                    initialEmail={resetEmail}
+                  />
                 )
               ) : (
                 <AdminPasswordComponent onPasswordSet={checkAdminPasswordStatus} />

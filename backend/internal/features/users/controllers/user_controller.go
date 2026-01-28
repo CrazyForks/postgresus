@@ -28,6 +28,10 @@ func (c *UserController) RegisterRoutes(router *gin.RouterGroup) {
 	router.GET("/users/admin/has-password", c.IsAdminHasPassword)
 	router.POST("/users/admin/set-password", c.SetAdminPassword)
 
+	// Password reset (no auth required)
+	router.POST("/users/send-reset-password-code", c.SendResetPasswordCode)
+	router.POST("/users/reset-password", c.ResetPassword)
+
 	// OAuth callbacks
 	router.POST("/auth/github/callback", c.HandleGitHubOAuth)
 	router.POST("/auth/google/callback", c.HandleGoogleOAuth)
@@ -339,4 +343,71 @@ func (c *UserController) HandleGoogleOAuth(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, response)
+}
+
+// SendResetPasswordCode
+// @Summary Send password reset code
+// @Description Send a password reset code to the user's email
+// @Tags users
+// @Accept json
+// @Produce json
+// @Param request body users_dto.SendResetPasswordCodeRequestDTO true "Email address"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 429 {object} map[string]string
+// @Router /users/send-reset-password-code [post]
+func (c *UserController) SendResetPasswordCode(ctx *gin.Context) {
+	var request user_dto.SendResetPasswordCodeRequestDTO
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+		return
+	}
+
+	allowed, _ := c.rateLimiter.CheckLimit(
+		request.Email,
+		"reset-password",
+		3,
+		1*time.Hour,
+	)
+	if !allowed {
+		ctx.JSON(
+			http.StatusTooManyRequests,
+			gin.H{"error": "Rate limit exceeded. Please try again later."},
+		)
+		return
+	}
+
+	err := c.userService.SendResetPasswordCode(request.Email)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "If the email exists, a reset code has been sent"})
+}
+
+// ResetPassword
+// @Summary Reset password with code
+// @Description Reset user password using the code sent via email
+// @Tags users
+// @Accept json
+// @Produce json
+// @Param request body users_dto.ResetPasswordRequestDTO true "Reset password data"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Router /users/reset-password [post]
+func (c *UserController) ResetPassword(ctx *gin.Context) {
+	var request user_dto.ResetPasswordRequestDTO
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+		return
+	}
+
+	err := c.userService.ResetPassword(request.Email, request.Code, request.NewPassword)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Password reset successfully"})
 }

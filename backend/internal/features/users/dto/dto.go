@@ -92,3 +92,13 @@ type OAuthCallbackResponseDTO struct {
 	Token     string    `json:"token"`
 	IsNewUser bool      `json:"isNewUser"`
 }
+
+type SendResetPasswordCodeRequestDTO struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
+type ResetPasswordRequestDTO struct {
+	Email       string `json:"email"       binding:"required,email"`
+	Code        string `json:"code"        binding:"required"`
+	NewPassword string `json:"newPassword" binding:"required,min=8"`
+}
