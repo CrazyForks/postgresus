@@ -253,7 +253,7 @@ PG_BIN="/usr/lib/postgresql/17/bin"
 
 # Generate runtime configuration for frontend
 echo "Generating runtime configuration..."
-cat > /app/ui/build/runtime-config.js << 'JSEOF'
+cat > /app/ui/build/runtime-config.js <<JSEOF
 // Runtime configuration injected at container startup
 // This file is generated dynamically and should not be edited manually
 window.__RUNTIME_CONFIG__ = {
