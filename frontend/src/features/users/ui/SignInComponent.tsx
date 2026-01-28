@@ -2,7 +2,7 @@ import { EyeInvisibleOutlined, EyeTwoTone } from '@ant-design/icons';
 import { Button, Input } from 'antd';
 import { type JSX, useState } from 'react';
 
-import { GITHUB_CLIENT_ID, GOOGLE_CLIENT_ID } from '../../../constants';
+import { GITHUB_CLIENT_ID, GOOGLE_CLIENT_ID, IS_EMAIL_CONFIGURED } from '../../../constants';
 import { userApi } from '../../../entity/users';
 import { StringUtils } from '../../../shared/lib';
 import { FormValidator } from '../../../shared/lib/FormValidator';
@@ -11,9 +11,13 @@ import { GoogleOAuthComponent } from './oauth/GoogleOAuthComponent';
 
 interface SignInComponentProps {
   onSwitchToSignUp?: () => void;
+  onSwitchToResetPassword?: () => void;
 }
 
-export function SignInComponent({ onSwitchToSignUp }: SignInComponentProps): JSX.Element {
+export function SignInComponent({
+  onSwitchToSignUp,
+  onSwitchToResetPassword,
+}: SignInComponentProps): JSX.Element {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -133,18 +137,26 @@ export function SignInComponent({ onSwitchToSignUp }: SignInComponentProps): JSX
         </div>
       )}
 
-      {onSwitchToSignUp && (
-        <div className="mt-4 text-center text-sm text-gray-600 dark:text-gray-400">
-          Don&apos;t have an account?{' '}
+      <div className="mt-4 text-center text-sm text-gray-600 dark:text-gray-400">
+        Don&apos;t have an account?{' '}
+        <button
+          type="button"
+          onClick={onSwitchToSignUp}
+          className="cursor-pointer font-medium text-blue-600 hover:text-blue-700 dark:!text-blue-500"
+        >
+          Sign up
+        </button>
+        <br />
+        {IS_EMAIL_CONFIGURED && (
           <button
             type="button"
-            onClick={onSwitchToSignUp}
+            onClick={onSwitchToResetPassword}
             className="cursor-pointer font-medium text-blue-600 hover:text-blue-700 dark:!text-blue-500"
           >
-            Sign up
+            Forgot password?
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

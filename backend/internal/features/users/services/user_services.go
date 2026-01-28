@@ -2,6 +2,7 @@ package users_services
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,14 +28,20 @@ import (
 )
 
 type UserService struct {
-	userRepository   *users_repositories.UserRepository
-	secretKeyService *secrets.SecretKeyService
-	settingsService  *SettingsService
-	auditLogWriter   users_interfaces.AuditLogWriter
+	userRepository          *users_repositories.UserRepository
+	secretKeyService        *secrets.SecretKeyService
+	settingsService         *SettingsService
+	auditLogWriter          users_interfaces.AuditLogWriter
+	emailSender             users_interfaces.EmailSender
+	passwordResetRepository *users_repositories.PasswordResetRepository
 }
 
 func (s *UserService) SetAuditLogWriter(writer users_interfaces.AuditLogWriter) {
 	s.auditLogWriter = writer
+}
+
+func (s *UserService) SetEmailSender(sender users_interfaces.EmailSender) {
+	s.emailSender = sender
 }
 
 func (s *UserService) SignUp(request *users_dto.SignUpRequestDTO) error {
@@ -797,4 +804,165 @@ func (s *UserService) fetchGitHubPrimaryEmail(
 	}
 
 	return "", errors.New("github account has no accessible email")
+}
+
+func (s *UserService) SendResetPasswordCode(email string) error {
+	user, err := s.userRepository.GetUserByEmail(email)
+	if err != nil {
+		return fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// Silently succeed for non-existent users to prevent enumeration attacks
+	if user == nil {
+		return nil
+	}
+
+	// Only active users can reset passwords
+	if user.Status != users_enums.UserStatusActive {
+		return errors.New("only active users can reset their password")
+	}
+
+	// Check rate limiting - max 3 codes per hour
+	oneHourAgo := time.Now().UTC().Add(-1 * time.Hour)
+	recentCount, err := s.passwordResetRepository.CountRecentCodesByUserID(user.ID, oneHourAgo)
+	if err != nil {
+		return fmt.Errorf("failed to check rate limit: %w", err)
+	}
+
+	if recentCount >= 3 {
+		return errors.New("too many password reset attempts, please try again later")
+	}
+
+	// Generate 6-digit random code using crypto/rand for better randomness
+	codeNum := make([]byte, 4)
+	_, err = io.ReadFull(rand.Reader, codeNum)
+	if err != nil {
+		return fmt.Errorf("failed to generate random code: %w", err)
+	}
+
+	// Convert bytes to uint32 and modulo to get 6 digits
+	randomInt := uint32(
+		codeNum[0],
+	)<<24 | uint32(
+		codeNum[1],
+	)<<16 | uint32(
+		codeNum[2],
+	)<<8 | uint32(
+		codeNum[3],
+	)
+	code := fmt.Sprintf("%06d", randomInt%1000000)
+
+	// Hash the code
+	hashedCode, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash code: %w", err)
+	}
+
+	// Store in database with 1 hour expiration
+	resetCode := &users_models.PasswordResetCode{
+		ID:         uuid.New(),
+		UserID:     user.ID,
+		HashedCode: string(hashedCode),
+		ExpiresAt:  time.Now().UTC().Add(1 * time.Hour),
+		IsUsed:     false,
+		CreatedAt:  time.Now().UTC(),
+	}
+
+	if err := s.passwordResetRepository.CreateResetCode(resetCode); err != nil {
+		return fmt.Errorf("failed to create reset code: %w", err)
+	}
+
+	// Send email with code
+	if s.emailSender != nil {
+		subject := "Password Reset Code"
+		body := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+    <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 20px;">
+        <h2 style="color: #333333; margin-bottom: 20px;">Password Reset Request</h2>
+        <p style="color: #666666; line-height: 1.6; margin-bottom: 20px;">
+            You have requested to reset your password. Please use the following code to complete the password reset process:
+        </p>
+        <div style="background-color: #f8f9fa; border: 2px solid #e9ecef; border-radius: 8px; padding: 20px; text-align: center; margin: 30px 0;">
+            <h1 style="color: #2c3e50; font-size: 36px; margin: 0; letter-spacing: 8px; font-family: monospace;">%s</h1>
+        </div>
+        <p style="color: #666666; line-height: 1.6; margin-bottom: 20px;">
+            This code will expire in <strong>1 hour</strong>.
+        </p>
+        <p style="color: #666666; line-height: 1.6; margin-bottom: 20px;">
+            If you did not request a password reset, please ignore this email. Your password will remain unchanged.
+        </p>
+        <hr style="border: none; border-top: 1px solid #e9ecef; margin: 30px 0;">
+        <p style="color: #999999; font-size: 12px; line-height: 1.6;">
+            This is an automated message. Please do not reply to this email.
+        </p>
+    </div>
+</body>
+</html>
+`, code)
+
+		if err := s.emailSender.SendEmail(user.Email, subject, body); err != nil {
+			return fmt.Errorf("failed to send email: %w", err)
+		}
+	}
+
+	// Audit log
+	if s.auditLogWriter != nil {
+		s.auditLogWriter.WriteAuditLog(
+			fmt.Sprintf("Password reset code sent to: %s", user.Email),
+			&user.ID,
+			nil,
+		)
+	}
+
+	return nil
+}
+
+func (s *UserService) ResetPassword(email, code, newPassword string) error {
+	user, err := s.userRepository.GetUserByEmail(email)
+	if err != nil {
+		return fmt.Errorf("failed to get user: %w", err)
+	}
+
+	if user == nil {
+		return errors.New("user with this email does not exist")
+	}
+
+	// Get valid reset code for user
+	resetCode, err := s.passwordResetRepository.GetValidCodeByUserID(user.ID)
+	if err != nil {
+		return errors.New("invalid or expired reset code")
+	}
+
+	// Verify code matches
+	err = bcrypt.CompareHashAndPassword([]byte(resetCode.HashedCode), []byte(code))
+	if err != nil {
+		return errors.New("invalid reset code")
+	}
+
+	// Mark code as used
+	if err := s.passwordResetRepository.MarkCodeAsUsed(resetCode.ID); err != nil {
+		return fmt.Errorf("failed to mark code as used: %w", err)
+	}
+
+	// Update user password
+	if err := s.ChangeUserPassword(user.ID, newPassword); err != nil {
+		return fmt.Errorf("failed to update password: %w", err)
+	}
+
+	// Audit log
+	if s.auditLogWriter != nil {
+		s.auditLogWriter.WriteAuditLog(
+			"Password reset via email code",
+			&user.ID,
+			nil,
+		)
+	}
+
+	return nil
 }

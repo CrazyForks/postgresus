@@ -8,6 +8,8 @@ import type { InviteUserResponse } from '../model/InviteUserResponse';
 import type { IsAdminHasPasswordResponse } from '../model/IsAdminHasPasswordResponse';
 import type { OAuthCallbackRequest } from '../model/OAuthCallbackRequest';
 import type { OAuthCallbackResponse } from '../model/OAuthCallbackResponse';
+import type { ResetPasswordRequest } from '../model/ResetPasswordRequest';
+import type { SendResetPasswordCodeRequest } from '../model/SendResetPasswordCodeRequest';
 import type { SetAdminPasswordRequest } from '../model/SetAdminPasswordRequest';
 import type { SignInRequest } from '../model/SignInRequest';
 import type { SignInResponse } from '../model/SignInResponse';
@@ -132,6 +134,24 @@ export const userApi = {
         notifyAuthListeners();
         return typedResponse;
       });
+  },
+
+  async sendResetPasswordCode(request: SendResetPasswordCodeRequest): Promise<{ message: string }> {
+    const requestOptions: RequestOptions = new RequestOptions();
+    requestOptions.setBody(JSON.stringify(request));
+    return apiHelper.fetchPostJson(
+      `${getApplicationServer()}/api/v1/users/send-reset-password-code`,
+      requestOptions,
+    );
+  },
+
+  async resetPassword(request: ResetPasswordRequest): Promise<{ message: string }> {
+    const requestOptions: RequestOptions = new RequestOptions();
+    requestOptions.setBody(JSON.stringify(request));
+    return apiHelper.fetchPostJson(
+      `${getApplicationServer()}/api/v1/users/reset-password`,
+      requestOptions,
+    );
   },
 
   isAuthorized: (): boolean => !!accessTokenHelper.getAccessToken(),

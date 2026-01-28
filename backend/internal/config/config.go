@@ -114,6 +114,15 @@ type EnvVariables struct {
 	TestSupabaseUsername string `env:"TEST_SUPABASE_USERNAME"`
 	TestSupabasePassword string `env:"TEST_SUPABASE_PASSWORD"`
 	TestSupabaseDatabase string `env:"TEST_SUPABASE_DATABASE"`
+
+	// SMTP configuration (optional)
+	SMTPHost     string `env:"SMTP_HOST"`
+	SMTPPort     int    `env:"SMTP_PORT"`
+	SMTPUser     string `env:"SMTP_USER"`
+	SMTPPassword string `env:"SMTP_PASSWORD"`
+
+	// Application URL (optional) - used for email links
+	DatabasusURL string `env:"DATABASUS_URL"`
 }
 
 var (

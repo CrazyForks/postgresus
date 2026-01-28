@@ -2,6 +2,7 @@ interface RuntimeConfig {
   IS_CLOUD?: string;
   GITHUB_CLIENT_ID?: string;
   GOOGLE_CLIENT_ID?: string;
+  IS_EMAIL_CONFIGURED?: string;
 }
 
 declare global {
@@ -27,7 +28,6 @@ export const GOOGLE_DRIVE_OAUTH_REDIRECT_URL = 'https://databasus.com/storages/g
 
 export const APP_VERSION = (import.meta.env.VITE_APP_VERSION as string) || 'dev';
 
-// First try runtime config, then build-time env var, then default to false
 export const IS_CLOUD =
   window.__RUNTIME_CONFIG__?.IS_CLOUD === 'true' || import.meta.env.VITE_IS_CLOUD === 'true';
 
@@ -36,6 +36,10 @@ export const GITHUB_CLIENT_ID =
 
 export const GOOGLE_CLIENT_ID =
   window.__RUNTIME_CONFIG__?.GOOGLE_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+
+export const IS_EMAIL_CONFIGURED =
+  window.__RUNTIME_CONFIG__?.IS_EMAIL_CONFIGURED === 'true' ||
+  import.meta.env.VITE_IS_EMAIL_CONFIGURED === 'true';
 
 export function getOAuthRedirectUri(): string {
   return `${window.location.origin}/auth/callback`;
